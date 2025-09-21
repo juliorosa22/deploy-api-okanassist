@@ -7,7 +7,8 @@ import asyncio  # <-- 1. IMPORT ASYNCIO
 from agno.models.groq import Groq
 # Fix: Use package imports from __init__.py
 from tools import Transaction, TransactionType, SupabaseClient
-
+from messages import  MESSAGES, get_message
+from agno.models.google import Gemini
 
 class TransactionAgent:
     """Specialized agent for handling financial transactions"""
@@ -54,32 +55,54 @@ class TransactionAgent:
         )
         
         # Initialize Gemini agent for vision processing (receipt/image analysis)
+        # For bank statement document batch extraction
         self.vision_agent = Agent(
-            name="VisionTransactionProcessor",
-            model="gemini-1.5-flash", #TODO adjust properly # Cost-effective with vision capabilities
+            model=Gemini(id="gemini-2.0-flash"),
+            markdown=True,
             instructions=f"""
-            You are a receipt and document processor that extracts financial data from images and PDFs.
-            
-            EXPENSE CATEGORIES (use exactly one of these):
-            {expense_cats}
-            
-            For receipt images, extract:
-            - Total amount (the final amount paid)
-            - Merchant/store name
-            - Date of transaction
-            - Category (choose from: {self.expense_categories})
-            - Any notable items
-            
-            For bank statements, extract:
-            - All transactions with amounts, descriptions, and dates
-            - Categorize each transaction appropriately
-            
-            IMPORTANT: Category MUST be exactly one from the predefined expense categories.
-            If unsure, use "Shopping" as default.
-            
-            Always return valid JSON format only, no explanations.
+            You are a financial document processor.
+
+            Your task is to analyze the attached bank statement PDF and extract every transaction as a batch.
+
+            Expense Categories: {expense_cats}
+            Income Categories: {income_cats}
+
+            For each transaction, extract:
+            - Amount (positive for income, negative or positive for expenses, but mark transaction type clearly)
+            - Description (what the transaction is for)
+            - Date (YYYY-MM-DD format)
+            - Transaction type ("income" or "expense")
+            - Category (must be from the lists above)
+
+            Rules:
+            - The category must be exactly one from the appropriate list.
+            - If the category is unclear for an expense, use "Shopping".
+            - If the category is unclear for an income, use "Other Income".
+            - Only include transactions that are clearly present in the document.
+
+            Output:
+            Return ONLY a valid JSON array of transactions. Do not include any explanation or extra text.
+
+            Example:
+            [
+            {{
+                "amount": 100.00,
+                "description": "Salary payment",
+                "date": "2025-09-01",
+                "transaction_type": "income",
+                "category": "Salary"
+            }},
+            {{
+                "amount": 25.50,
+                "description": "Grocery shopping",
+                "date": "2025-09-02",
+                "transaction_type": "expense",
+                "category": "Essentials"
+            }}
+            ]
             """
-        )
+)
+
     #TODO adapt to respond in user's language
     async def process_message(self, user_id: str, message: str, lang: str) -> str:
         """Process a text message for transaction data using Groq"""
@@ -141,49 +164,69 @@ class TransactionAgent:
             # Generate response
             emoji = "💸" if data["transaction_type"] == "expense" else "💰"
             #TODO adapt to respond in user's language
-            return (
-                f"{emoji} *Transaction recorded!*\n\n"
-                f"📝 *Description:* {data['description']}\n"
-                f"💵 *Amount:* ${data['amount']:.2f}\n"
-                f"📂 *Category:* {data['category']}\n"
-                f"📊 *Type:* {data['transaction_type'].title()}\n"
-                #f"🚀 *Processed by:* Groq Llama 3.1 70B"
-            )
+
+            message_template = get_message("transaction_created", lang, emoji=emoji, description=data['description'], amount=data['amount'], category=data['category'], transaction_type=data['transaction_type'])
+            return message_template
+                
             
         except Exception as e:
             print(f"❌ Transaction Agent: Error processing transaction message: {e}")
             return "❌ Sorry, I couldn't process that transaction. Please try again with a clearer format."
 
-    async def process_receipt_image(self, user_id: str, image_path: str, lang: str = 'en') -> str:
+    async def process_receipt_image(self, user_data: Dict[str, Any], image_path: str, lang: str = 'en') -> str:
         """Process receipt image using Gemini vision capabilities"""
+
         try:
+            #print("DEBUG: user_data type:", type(user_data), "value:", user_data)  # Debug log
+            user_currency = user_data.get('currency', 'USD')
+            user_id = user_data.get('user_id', None)
+            print(f"Processing receipt image for user {user_id} at {image_path}")
+
             # Use Gemini vision to extract receipt data
             extraction_prompt = f"""
-            Analyze this receipt image and extract transaction details.
-            
-            Available categories: {self.expense_categories}
-            
-            Extract:
-            - Total amount (the final amount paid)
-            - Merchant/store name
-            - Date of transaction
-            - Category (choose from: {self.expense_categories})
-            - Any notable items
-            
+            You are a financial receipt processor.
+
+            Analyze the attached receipt image and extract the transaction details:
+
+            - Total amount paid (final amount)
+            - Merchant or store name
+            - Date of transaction (YYYY-MM-DD format if possible)
+            - Category (choose exactly one from the defined categories
+            - Any notable items purchased
+
             Rules:
-            - Category MUST be exactly one from the list above
-            - If unsure, use "Shopping"
-            
-            Return ONLY a JSON object with the extracted data, no explanation:
+            - The category must be exactly one from the provided list.
+            - If you are unsure of the category, use "Shopping" as the default.
+            - Only include information that is clearly present on the receipt.
+
+            Output:
+            Return ONLY a valid JSON object with the extracted data. Do not include any explanation or extra text.
+
+            Example:
+            {{
+            "amount": 23.45,
+            "description": "Purchase at Starbucks: Latte, Croissant",
+            "merchant": "Starbucks",
+            "date": "2025-09-20",
+            "category": "Food & Dining",
+            "transaction_type": "expense",
+            "confidence": 0.9,
+            }}
             """
-            
+           
+
+
+            image_dict = {"filepath": image_path}
             response_obj = await asyncio.to_thread(
-                self.vision_agent.run,
-                extraction_prompt,
-                images=[image_path]
-            )
-            response = response_obj.content # <-- FIX: Access the .content attribute
-            
+                self.vision_agent.run,  
+                    extraction_prompt,
+                    images=[image_dict]  # Try bytes instead of path
+                )
+                
+           
+            response = response_obj.content
+        
+            print("Raw response from Gemini Vision:", response)
             # Parse the response
             try:
                 # Clean response to extract JSON
@@ -192,13 +235,18 @@ class TransactionAgent:
                 if json_start >= 0 and json_end > json_start:
                     json_str = response[json_start:json_end]
                     data = json.loads(json_str)
+                    
+                    # Validate that data is a dict
+                    if not isinstance(data, dict):
+                        print(f"❌ Parsed data is not a dict: {type(data)}, value: {data}")
+                        return "📸 Receipt processed, but the extracted data was invalid. Please try again."
                 else:
                     raise ValueError("No JSON found in response")
-            except:
-                # Fallback if JSON parsing fails
+            except Exception as parse_e:
+                print(f"❌ JSON parsing error: {parse_e}")
                 return "📸 Receipt processed, but I had trouble extracting the data. Please manually enter the transaction."
             
-            # Validate category
+            # Now safe to use data.get() since we validated it's a dict
             validated_category = self._validate_category(data.get("category", "Shopping"), "expense")
             
             # Create transaction from receipt data
@@ -211,8 +259,7 @@ class TransactionAgent:
                 original_message="Receipt upload",
                 source_platform="telegram",
                 merchant=data.get("merchant"),
-                confidence_score=0.90,
-                tags=["receipt"],
+                confidence_score=data.get("confidence", 0.85),
                 receipt_image_url=image_path  # Store the path
             )
             
@@ -220,47 +267,77 @@ class TransactionAgent:
             saved_transaction = await self.supabase_client.database.save_transaction(transaction)
             
             return (
-                f"📸 *Receipt processed successfully!*\n\n"
-                f"🏪 *Merchant:* {data.get('merchant', 'Unknown')}\n"
-                f"💵 *Amount:* ${data.get('amount', 0):.2f}\n"
-                f"📂 *Category:* {validated_category}\n"
-                f"📅 *Date:* {data.get('date', 'Today')}\n\n"
-                f"Transaction automatically saved! ✅\n"
-                f"🔍 *Processed by:* Gemini 1.5 Flash Vision"
+                get_message(
+                    "success_process_receipt", 
+                    lang,
+                    merchant=data.get("merchant", "Store"),
+                    amount=data.get("amount", 0.0),
+                    category=validated_category,
+                    date=datetime.now().strftime("%Y-%m-%d")
+                )
             )
             
         except Exception as e:
             print(f"❌ Transaction (Receipt): Error processing receipt image: {e}")
             return "❌ Sorry, I couldn't process that receipt image. Please try again or enter the transaction manually."
 
-    async def process_bank_statement(self, user_id: str, pdf_path: str, lang: str = 'en') -> str:
+    async def process_bank_statement(self, user_data: Dict[str, Any], pdf_path: str, lang: str = 'en') -> str:
         """Process bank statement PDF using Gemini"""
+        user_id = user_data.get('user_id', None)
+        user_currency = user_data.get('currency', 'USD')
+
         try:
             # Use Gemini to extract multiple transactions from PDF
             extraction_prompt = f"""
-            Analyze this bank statement PDF and extract all transactions.
-            
-            Available EXPENSE categories: {self.expense_categories}
-            Available INCOME categories: {self.income_categories}
-            
+            You are a financial document processor.
+
+            1. Detect the user's language from the document.
+            2. The currency for all transactions is: {user_currency}.
+
+            Analyze the attached bank statement PDF and extract every transaction.
+
+            Expense Categories (choose one for each expense): {self.expense_categories}
+            Income Categories (choose one for each income): {self.income_categories}
+
             For each transaction, extract:
-            - Amount (positive for income, expenses should be marked clearly)
-            - Description
-            - Date
-            - Transaction type (income or expense)
-            - Category (choose from appropriate list above)
-            
+            - Amount (positive for income, negative or positive for expenses, but mark transaction type clearly)
+            - Description (what the transaction is for)
+            - Date (YYYY-MM-DD format)
+            - Transaction type ("income" or "expense")
+            - Category (must be from the lists above)
+
             Rules:
-            - Category MUST be from the appropriate list
-            - Use "Shopping" for unclear expenses, "Other Income" for unclear income
-            
-            Return ONLY a JSON array of transactions, no explanation:
+            - The category must be exactly one from the appropriate list.
+            - If the category is unclear for an expense, use "Shopping".
+            - If the category is unclear for an income, use "Other Income".
+
+            Output:
+            Return ONLY a valid JSON array of transactions. Do not include any explanation or extra text.
+            Example:
+            [
+              {{
+                "amount": 100.00,
+                "description": "Salary payment",
+                "date": "2025-09-01",
+                "transaction_type": "income",
+                "category": "Salary",
+                "confidence_score": 0.85
+              }},
+              {{
+                "amount": 25.50,
+                "description": "Grocery shopping",
+                "date": "2025-09-02",
+                "transaction_type": "expense",
+                "category": "Essentials",
+                "confidence_score": 0.9
+              }}
+            ]
             """
-            
+            pdf_dict = {"filepath": pdf_path}
             response_obj = await asyncio.to_thread(
                 self.vision_agent.run,
                 extraction_prompt,
-                files=[pdf_path]
+                files=[pdf_dict]
             )
             response = response_obj.content # <-- FIX: Access the .content attribute
             
@@ -312,15 +389,9 @@ class TransactionAgent:
                 except Exception as e:
                     print(f"❌ Error saving transaction: {e}")
                     continue
-            
-            return (
-                f"📄 *Bank statement processed!*\n\n"
-                f"✅ *{saved_count} transactions imported*\n"
-                f"📊 *Ready for analysis*\n\n"
-                f"Use /balance to see your updated summary!\n"
-               # f"🔍 *Processed by:* Gemini 1.5 Flash"
-            )
-            
+
+            return get_message("success_process_pdf", lang, saved_count=saved_count)
+
         except Exception as e:
             print(f"❌ Transaction (Bank Statement): Error processing bank statement: {e}")
             return "❌ Sorry, I couldn't process that bank statement. Please ensure it's a valid PDF with transaction data."
@@ -355,14 +426,14 @@ class TransactionAgent:
             
             # Build summary message
             message = f"""
-{flow_emoji} *Financial Summary (Last {days} days)*
+            {flow_emoji} *Financial Summary (Last {days} days)*
 
-💰 *Income:* ${summary.total_income:,.2f} ({summary.income_count} transactions)
-💸 *Expenses:* ${summary.total_expenses:,.2f} ({summary.expense_count} transactions)
-📊 *Net Flow:* ${net_flow:,.2f}
+            💰 *Income:* ${summary.total_income:,.2f} ({summary.income_count} transactions)
+            💸 *Expenses:* ${summary.total_expenses:,.2f} ({summary.expense_count} transactions)
+            📊 *Net Flow:* ${net_flow:,.2f}
 
-*Top Expense Categories:*
-"""
+            *Top Expense Categories:*
+            """
             
             for cat in summary.expense_categories[:3]:
                 message += f"• {cat['category']}: ${cat['total']:,.2f}\n"

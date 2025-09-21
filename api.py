@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, File, UploadFile, BackgroundTasks, Request
+from fastapi import FastAPI, HTTPException, File, UploadFile, BackgroundTasks, Request, Form
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -8,7 +8,7 @@ import os
 import tempfile
 from datetime import datetime
 from dotenv import load_dotenv
-
+import aiohttp
 # Import standardized messages
 from messages import MESSAGES, get_message
 
@@ -43,18 +43,18 @@ reminder_agent = None
 main_agent = None
 timezone_agent = None
 session_manager = None
-
+bot_token = None
 async def initialize_services():
     """Initialize services on-demand (for GCF compatibility)"""
-    global supabase_client, transaction_agent, reminder_agent, main_agent, timezone_agent, session_manager
-    
+    global supabase_client, transaction_agent, reminder_agent, main_agent, timezone_agent, session_manager, bot_token
+
     if supabase_client is None:
         print("🚀 Initializing API services...")
         
         # Initialize Supabase client
         supabase_url = os.getenv('SUPABASE_URL')
         supabase_key = os.getenv('SUPABASE_SECRET_KEY')
-        
+        bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
         if not supabase_url or not supabase_key:
             raise ValueError("SUPABASE_URL and SUPABASE_SECRET_KEY are required")
         
@@ -234,10 +234,11 @@ async def route_message(request: MessageRequest):
             # Add credit info to response if not premium
             if not credit_result.get('is_premium', False):
                 credits_remaining = credit_result.get('credits_remaining', 0)
-                result += get_message("credit_warning", lang, credits_remaining=credits_remaining)
-                if credits_remaining <= 1:
+                
+                if credits_remaining <= 10:
+                    result += get_message("credit_warning", lang, credits_remaining=credits_remaining)
                     result += get_message("credit_low", lang)
-
+                print("Final result:", result)
             return {"success": True, "message": result}
         else:
             return {"success": False, "message": credit_result.get("message")}
@@ -251,13 +252,13 @@ async def route_message(request: MessageRequest):
 ####### Transactions Endpoints
 
 @app.post("/api/v1/process-receipt")
-async def process_receipt(user_id: str, file: UploadFile = File(...)):
+async def process_receipt(user_id: str=Form(...), file: UploadFile = File(...)):
     """Process receipt image - REQUIRES AUTHENTICATION + CREDITS"""
     await initialize_services()
     try:
         if not transaction_agent:
             raise HTTPException(status_code=503, detail="Service not ready")
-        
+        print("here: in process_receipt")
         # Step 1: Get user data using centralized helper
         user_data = await get_user_data(AuthCheckRequest(telegram_id=user_id))
         supabase_id = user_data.get('user_id', None)
@@ -272,7 +273,7 @@ async def process_receipt(user_id: str, file: UploadFile = File(...)):
             temp_file.write(content)
             temp_path = temp_file.name
 
-        result = await transaction_agent.process_receipt_image(supabase_id, temp_path)
+        result = await transaction_agent.process_receipt_image(user_data, temp_path)
 
         # Clean up temp file
         os.unlink(temp_path)
@@ -355,7 +356,7 @@ async def get_transaction_summary(request: SummaryRequest):
     except Exception as e:
         print(f"❌ Unexpected error in get_transaction_summary: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
-
+### Reminders Endpoints
 @app.post("/api/v1/get-reminders")
 async def get_reminders(user_id: str, limit: int = 10):
     """Get user reminders - REQUIRES AUTHENTICATION"""
@@ -376,6 +377,36 @@ async def get_reminders(user_id: str, limit: int = 10):
         print(f"❌ Unexpected error in get_reminders: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
+## server function to receive batch of reminders and send notifications
+@app.post("/api/v1/batch-notify-reminders")
+async def batch_notify_reminders(request: Request):
+    """Receive batch of reminders and send notifications."""
+    try:
+        data = await request.json()
+        reminders = data.get("reminders", [])
+
+        notified = []
+        for reminder_data in reminders:
+            reminder_id = reminder_data["reminder_id"]
+            telegram_id = reminder_data["telegram_id"]
+            title = reminder_data["title"]
+            description = reminder_data["description"]
+            due_datetime = reminder_data["due_datetime"]
+
+            # Send notification (implement your Telegram bot logic here)
+            await send_telegram_notification(telegram_id, title, description, due_datetime)
+
+            # Mark as notified in DB
+            await supabase_client.database.mark_reminder_notified(reminder_id)
+            notified.append(reminder_id)
+
+        return {"success": True, "notified_count": len(notified), "reminder_ids": notified}
+    except Exception as e:
+        print(f"❌ Error in batch_notify_reminders: {e}")
+        return {"success": False, "error": str(e)}
+
+
+##### User Management Endpoints
 @app.post("/api/v1/register")
 async def register_user(request: RegisterRequest):
     """Register new user using Supabase Auth"""
@@ -389,15 +420,17 @@ async def register_user(request: RegisterRequest):
         user_data = None
         try:
             user_data = await get_user_data(AuthCheckRequest(telegram_id=request.telegram_id))
+            print("User already authenticated:", user_data)
         except HTTPException as e:
             if e.status_code not in (401, 404):
+                print(f"❌ Error checking existing user in register_user: {e}")
                 raise
             user_data = None
 
         if user_data:
             return {
                 "success": False, 
-                "message": get_message("already_registered", lang_code)
+                "message": get_message("already_registered", lang_code,email=user_data.get('email','unknown'))
             }
         
         # --- Registration process continues here ---
@@ -553,6 +586,20 @@ async def check_authentication(request: AuthCheckRequest) -> Dict[str, Any]:
         print(f"❌ Uncaught error in check_authentication: {e}")
         raise HTTPException(status_code=500, detail="An error occurred during authentication.")
 
+
+async def send_telegram_notification(telegram_id: str, title: str, description: str, due_datetime: str):
+    """Send notification via Telegram bot"""
+    #bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    
+    message = f"🔔 Reminder: {title}\n\n{description}\n\nDue: {due_datetime}"
+    
+    async with aiohttp.ClientSession() as session:
+        await session.post(url, json={
+            "chat_id": telegram_id,
+            "text": message,
+            "parse_mode": "Markdown"
+        })
 
 # Wrap the session manager access and use the exception-based check_authentication
 async def get_user_data(auth_request: AuthCheckRequest) -> Dict[str, Any]:

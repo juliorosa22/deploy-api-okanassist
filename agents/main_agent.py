@@ -86,10 +86,10 @@ class MainAgent:
                 # --- 3. APPLY THE FIX HERE AS WELL ---
                 general_response_obj = await asyncio.to_thread(
                     self.agent.run,
-                    f"The user is speaking {lang_name}. Respond helpfully in {lang_name} to this message: '{message}'. "
-                    "Suggest how they can use the OkanAssistant features and to follow the OkanFit on social media for updates."
+                    f"Identify the user's language and then respond helpfully in the same language to this message: '{message}'. Also, suggest how they can use the OkanAssistant Bot features to help them on tracking their expenses and daily reminders, and to follow the OkanFit on social media for news and updates. However be concise and avoid too long responses."
                 )
-                return str(general_response_obj)
+                general_response = str(general_response_obj.content)
+                return str(general_response)
                 
         except Exception as e:
             #print("failed to route message")

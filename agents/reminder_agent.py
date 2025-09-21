@@ -32,6 +32,27 @@ class ReminderAgent:
             - You MUST return ONLY a valid JSON object. No explanations or surrounding text.
             - The `due_date` MUST be in UTC ISO 8601 format (e.g., "2025-09-18T15:00:00Z"). If no specific time is found, this should be null.
             - If no clear reminder is found in the message, return `{"reminder_found": false}`.
+            Example valid outputs:
+            {{
+                "reminder_found": true,
+                "title": "Call Mom",
+                "description": "Remember to call Mom to check in tomorrow.",
+                "due_date": "2025-09-18T15:00:00Z",
+                "priority": "high",
+                "reminder_type": "task"
+            }},
+            {{
+                "reminder_found": true,
+                "title": "Doctor Appointment",
+                "description": "Annual check-up with Dr. Smith.",
+                "due_date": null,
+                "priority": "medium",
+                "reminder_type": "event"
+            }},
+            {{
+                "reminder_found": false
+            }}
+            
             """
         )
     
@@ -52,7 +73,7 @@ class ReminderAgent:
             lang_name = lang_map.get(language.split('-')[0], 'English')
 
             extraction_prompt = f"""
-            The user is speaking {lang_name}.
+            Analyse the user language.
             The user's current date and time is {user_now_iso}.
             Analyze the following user message and return the JSON output based on your instructions.
 

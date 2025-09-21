@@ -667,6 +667,15 @@ class Database:
             """, reminder_id, user_id)
             
             return result != "UPDATE 0"
+        
+    async def mark_reminder_notified(self, reminder_id: int):
+        """Mark reminder as notified"""
+        async with self.pool.acquire() as conn:
+            await conn.execute("""
+                UPDATE reminders 
+                SET notification_sent = TRUE, updated_at = NOW()
+                WHERE id = $1
+            """, reminder_id)
 
     # ============================================================================
     # USER SETTINGS OPERATIONS

@@ -15,7 +15,7 @@ MESSAGES = {
             "To unlock these features, please create your account by typing /register."
         ),
         "need_register_premium": "🔐 You need to register first. Type /register to create your account, then try again.",
-        "telegram_already_registered": "❌ This Telegram account is already registered with email: {email}",
+        "already_registered": "❌ This Telegram account is already registered with email: {email}",
         "link_success": "✅ Telegram account linked to existing email! Welcome back {name}!",
         "link_failed": "❌ Failed to link accounts. Please contact support.",
         "registration_failed": "❌ Registration failed: {message}",
@@ -29,7 +29,26 @@ MESSAGES = {
         "registration_linking_failed": "❌ Registration failed during account linking. Please try again.",
         "user_not_registered": "User not registered. Please use /register command first.",
         "failed_retrieve_user_data": "❌ Failed to retrieve user data after linking. Please try logging in again or contact support.",
-        
+        "transaction_created": ("{emoji} *Transaction recorded!*\n\n"
+                "📝 *Description:* {description}\n"
+                "💵 *Amount:* ${amount:.2f}\n"
+                "📂 *Category:* {category}\n"
+                "📊 *Type:* {transaction_type}\n"
+            ),
+        "success_process_receipt": ("📸 *Receipt processed successfully!*\n\n"
+                "🏪 *Merchant:* {merchant}\n"
+                "💵 *Amount:* ${amount:.2f}\n"
+                "📂 *Category:* {category}\n"
+                "📅 *Date:* {date}\n\n"
+                "Transaction automatically saved! ✅\n"
+            ),
+        "success_process_pdf": ("📄 *Bank statement processed!*\n\n"
+                "✅ *{saved_count} transactions imported*\n"
+                "📊 *Ready for analysis*\n\n"
+                "Use /balance to see your updated summary!\n"
+            ),
+
+
         # --- Reminder Messages ---
         "reminder_created": (
             "✅ *Reminder Created!*\n\n"
@@ -45,15 +64,12 @@ MESSAGES = {
         "reminder_fetch_failed": "❌ Sorry, I couldn't fetch your reminders right now.",
 
          "help_message": """
-🤖 *OkanAssist*
+🤖 *OkanAssist Bot*
 
-*💰 Expense Tracking:*
+*💰 Transactions Messages:*
 • "Spent $25 on lunch at McDonald's"
 • "Paid $1200 rent"
 • "Bought groceries for $85"
-• 📸 Send receipt photos for automatic processing
-
-*💵 Income Tracking:*
 • "Received $3000 salary"
 • "Got $50 freelance payment"
 • "Earned $200 from side project"
@@ -67,7 +83,6 @@ MESSAGES = {
 • /balance - View financial summary
 • /reminders - Show pending reminders
 • "Show expenses this week"
-• "What's my spending pattern?"
 
 *📄 Document Processing:*
 • Send PDF bank statements for bulk import
@@ -92,74 +107,7 @@ Just talk to me naturally - I understand! 🎉
         "session_expired": "⏰ Your session has expired. Please log in again with /start.",
         "generic_error": "❌ Something went wrong. Please try again or contact support.",
         "upgrade_to_premium": "🚀 *Upgrade to Premium!*\n\nClick the link below to unlock unlimited AI features.\n\n[Upgrade Now]({stripe_url})",
-        "registration_html_success": ("""
-            <!DOCTYPE html>
-            <html lang="en">
-            <head>
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>Registration Successful</title>
-                <style>
-                    body {{
-                        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-                        background-color: #f0f2f5;
-                        display: flex;
-                        justify-content: center;
-                        align-items: center;
-                        height: 100vh;
-                        margin: 0;
-                        color: #333;
-                    }}
-                    .container {{
-                        text-align: center;
-                        background-color: #ffffff;
-                        padding: 40px;
-                        border-radius: 12px;
-                        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-                        max-width: 400px;
-                        width: 90%;
-                    }}
-                    .logo {{
-                        width: 80px;
-                        height: 80px;
-                        margin-bottom: 20px;
-                    }}
-                    h1 {{
-                        font-size: 24px;
-                        margin-bottom: 10px;
-                        color: #1c1e21;
-                    }}
-                    p {{
-                        font-size: 16px;
-                        margin-bottom: 30px;
-                        line-height: 1.5;
-                    }}
-                    .button {{
-                        display: inline-block;
-                        padding: 12px 24px;
-                        font-size: 16px;
-                        font-weight: bold;
-                        color: #fff;
-                        background-color: #007bff;
-                        border-radius: 6px;
-                        text-decoration: none;
-                        transition: background-color 0.3s;
-                    }}
-                    .button:hover {{
-                        background-color: #0056b3;
-                    }}
-                </style>
-            </head>
-            <body>
-                <div class="container">
-                    <img src="{logo_url}" alt="OkanAssist Logo" class="logo">
-                    <h1>Registration Confirmed!</h1>
-                    <p>Your account is now active. You can return to Telegram and start tracking your finances.</p>
-                    <a href="{download_url}" class="button">Download the Mobile App</a>
-                </div>
-            </body>
-            </html>
-"""),
+        
 
     },
     "es": {
@@ -178,7 +126,7 @@ Just talk to me naturally - I understand! 🎉
             "Para desbloquear estas funciones, por favor crea tu cuenta escribiendo /register."
         ),
         "need_register_premium": "🔐 Necesitas registrarte primero. Escribe /register para crear tu cuenta y vuelve a intentarlo.",
-        "telegram_already_registered": "❌ Esta cuenta de Telegram ya está registrada con el email: {email}",
+        "already_registered": "❌ Esta cuenta de Telegram ya está registrada con el email: {email}",
         "link_success": "✅ ¡Cuenta de Telegram vinculada a un email existente! ¡Bienvenido de nuevo {name}!",
         "link_failed": "❌ No se pudo vincular la cuenta. Por favor, contacta a soporte.",
         "registration_failed": "❌ El registro falló: {message}",
@@ -186,7 +134,18 @@ Just talk to me naturally - I understand! 🎉
         "registration_linking_failed": "❌ El registro falló durante la vinculación de la cuenta. Por favor, inténtalo de nuevo.",
         "user_not_registered": "Usuario no registrado. Por favor, usa el comando /register primero.",
         "failed_retrieve_user_data": "❌ No se pudieron recuperar los datos del usuario después de la vinculación. Por favor, inicia sesión de nuevo o contacta a soporte.",
-        
+        "success_process_receipt": ("📸 *¡Recibo procesado con éxito!*\n\n"
+                "🏪 *Comercio:* {merchant}\n"
+                "💵 *Monto:* ${amount:.2f}\n"
+                "📂 *Categoría:* {category}\n"
+                "📅 *Fecha:* {date}\n\n"
+                "¡Transacción guardada automáticamente! ✅\n"
+        ),
+        "success_process_pdf": ("📄 *¡Extracto bancario procesado!*\n\n"
+                "✅ *{saved_count} transacciones importadas*\n"
+                "📊 *Listo para análisis*\n\n"
+                "Usa /balance para ver tu resumen actualizado!\n"
+        ),
         # --- Mensajes de Recordatorio ---
         "reminder_created": (
             "✅ ¡*Recordatorio Creado!*\n\n"
@@ -208,7 +167,13 @@ Just talk to me naturally - I understand! 🎉
         "session_expired": "⏰ Tu sesión ha expirado. Por favor, inicia sesión de nuevo con /start.",
         "generic_error": "❌ Algo salió mal. Por favor, inténtalo de nuevo o contacta a soporte.",
         "upgrade_to_premium": "🚀 ¡*Actualiza a Premium!*\n\nHaz clic en el enlace para desbloquear funciones ilimitadas de IA.\n\n[Actualizar ahora]({stripe_url})",
-        "registration_html_success": """... (HTML content translated to Spanish) ...""",
+        "transaction_created": ("{emoji} *¡Transacción registrada!*\n\n"
+                "📝 *Descripción:* {description}\n"
+                "💵 *Monto:* ${amount:.2f}\n"
+                "📂 *Categoría:* {category}\n"
+                "📊 *Tipo:* {transaction_type}\n"
+            )
+        
     },
     "pt": {
         "welcome_authenticated": (
@@ -226,7 +191,7 @@ Just talk to me naturally - I understand! 🎉
             "Para desbloquear esses recursos, por favor, crie sua conta digitando /register."
         ),
         "need_register_premium": "🔐 Você precisa se registrar primeiro. Digite /register para criar sua conta e tente novamente.",
-        "telegram_already_registered": "❌ Esta conta do Telegram já está registrada com o e-mail: {email}",
+        "already_registered": "❌ Esta conta do Telegram já está registrada com o e-mail: {email}",
         "link_success": "✅ Conta do Telegram vinculada a um e-mail existente! Bem-vindo de volta {name}!",
         "link_failed": "❌ Falha ao vincular a conta. Por favor, entre em contato com o suporte.",
         "registration_failed": "❌ O registro falhou: {message}",
@@ -234,7 +199,24 @@ Just talk to me naturally - I understand! 🎉
         "registration_linking_failed": "❌ O registro falhou durante a vinculação da conta. Por favor, tente novamente.",
         "user_not_registered": "Usuário não registrado. Por favor, use o comando /register primeiro.",
         "failed_retrieve_user_data": "❌ Falha ao recuperar os dados do usuário após a vinculação. Por favor, faça login novamente ou contate o suporte.",
-        
+        "transaction_created": ("{emoji} *Transação registrada!*\n\n"
+            "📝 *Descrição:* {description}\n"
+            "💵 *Montante:* ${amount:.2f}\n"
+            "📂 *Categoria:* {category}\n"
+            "📊 *Tipo:* {transaction_type}\n"
+        ),
+        "success_process_receipt": ("📸 *Recibo processado com sucesso!*\n\n"
+            "🏪 *Comercio:* {merchant}\n"
+            "💵 *Valor:* ${amount:.2f}\n"
+            "📂 *Categoria:* {category}\n"
+            "📅 *Data:* {date}\n\n"
+            "Transação salva automaticamente! ✅\n"
+        ),
+        "success_process_pdf": ("📄 *Extrato bancário processado!*\n\n"
+            "✅ *{saved_count} transações importadas*\n"
+            "📊 *Pronto para análise*\n\n"
+            "Use /balance para ver seu resumo atualizado!\n"
+        ),
         # --- Mensagens de Lembrete ---
         "reminder_created": (
             "✅ *Lembrete Criado!*\n\n"
@@ -256,7 +238,7 @@ Just talk to me naturally - I understand! 🎉
         "session_expired": "⏰ Sua sessão expirou. Por favor, faça login novamente com /start.",
         "generic_error": "❌ Algo deu errado. Por favor, tente novamente ou entre em contato com o suporte.",
         "upgrade_to_premium": "🚀 *Faça o Upgrade para Premium!*\n\nClique no link abaixo para desbloquear recursos ilimitados de IA.\n\n[Fazer Upgrade Agora]({stripe_url})",
-        "registration_html_success": """... (HTML content translated to Portuguese) ...""",
+        
     }
 }
 
