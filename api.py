@@ -1,7 +1,8 @@
 from fastapi import FastAPI, HTTPException, File, UploadFile, BackgroundTasks, Request, Form
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-
+from datetime import datetime, timedelta
+from dateutil.relativedelta import relativedelta
 from typing import Optional, List, Dict, Any, Tuple
 import uvicorn
 import os
@@ -400,11 +401,32 @@ async def batch_notify_reminders(request: Request):
             await supabase_client.database.mark_reminder_notified(reminder_id)
             notified.append(reminder_id)
 
+            # --- Recurring logic ---
+            is_recurring = reminder_data.get("is_recurring", False)
+            recurrence_pattern = reminder_data.get("recurrence_pattern")
+            if is_recurring and recurrence_pattern:
+                # Calculate next due date
+                dt = datetime.fromisoformat(due_datetime.replace("Z", "+00:00"))
+                if recurrence_pattern == "daily":
+                    next_due = dt + timedelta(days=1)
+                elif recurrence_pattern == "weekly":
+                    next_due = dt + timedelta(weeks=1)
+                elif recurrence_pattern == "monthly":
+                    next_due = dt + relativedelta(months=1)
+                else:
+                    next_due = None
+
+                if next_due:
+                    # Update the existing reminder's due_datetime and reset notification_sent
+                    await supabase_client.database.update_reminder_due_datetime(
+                        reminder_id,
+                        next_due.isoformat().replace("+00:00", "Z")
+                    )
+
         return {"success": True, "notified_count": len(notified), "reminder_ids": notified}
     except Exception as e:
         print(f"❌ Error in batch_notify_reminders: {e}")
         return {"success": False, "error": str(e)}
-
 
 ##### User Management Endpoints
 @app.post("/api/v1/register")
@@ -565,6 +587,7 @@ async def check_authentication(request: AuthCheckRequest) -> Dict[str, Any]:
                 if result.get("success"):
                     # After successful link, fetch the complete user data again
                     user_data = await supabase_client.get_user_by_telegram_id_auth(request.telegram_id)
+                    print("Linking successful, fetched user_data:", user_data)
                     if user_data:
                         return await _validate_and_complete_user_data(user_data, request.telegram_id)
                 
@@ -647,10 +670,11 @@ async def _validate_and_complete_user_data(user_data: Dict[str, Any], telegram_i
             # Try to fetch from Supabase Auth if user_id is available
             if user_data.get('user_id'):
                 try:
-                    auth_user = await supabase_client.supabase.auth.admin.get_user_by_id(user_data['user_id'])
-                    if auth_user.user:
-                        user_data['email'] = auth_user.user.email or user_data.get('email', '')
-                        user_data['name'] = auth_user.user.user_metadata.get('name', user_data.get('name', 'Unknown'))
+                    #auth_user = await supabase_client.supabase.auth.admin.get_user_by_id(user_data['user_id'])
+                    auth_user=await supabase_client.get_user_by_telegram_id_auth(telegram_id) # Avoid bugs
+                    if auth_user:
+                        user_data['email'] = auth_user.get('email') or user_data.get('email', '')
+                        user_data['name'] = auth_user.get('name') or user_data.get('name', 'Unknown')
                         #user_data['last_name'] = auth_user.user.user_metadata.get('last_name', user_data.get('last_name', ''))
                         user_data['authenticated'] = True
                         print(f"✅ Completed user data for {telegram_id}")

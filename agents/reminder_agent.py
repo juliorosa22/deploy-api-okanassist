@@ -26,6 +26,7 @@ class ReminderAgent:
             2.  **Identify the due date and time**. You will be given the user's current time for context. Convert relative expressions like "tomorrow at 3pm" or "in 2 hours" into a specific UTC ISO 8601 format.
             3.  **Determine priority**: "urgent", "high", "medium", or "low". Default to "medium".
             4.  **Determine reminder type**: "task", "event", "deadline", "habit", or "general". Default to "general".
+            5.  **Determine if a reminder is recurring and its pattern**: "daily", "weekly" or "monthly". If not recurring, set to null.
 
             **Rules & Output Format:**
             - You will be told the user's language. The user's message will be in that language.
@@ -39,16 +40,31 @@ class ReminderAgent:
                 "description": "Remember to call Mom to check in tomorrow.",
                 "due_date": "2025-09-18T15:00:00Z",
                 "priority": "high",
-                "reminder_type": "task"
+                "reminder_type": "habit",
+                "is_recurring": True,
+                "recurrence_pattern": "weekly"
             }},
             {{
                 "reminder_found": true,
-                "title": "Doctor Appointment",
-                "description": "Annual check-up with Dr. Smith.",
-                "due_date": null,
+                "title": "Gym Workout",
+                "description": "Remember to attend the gym workout session.",
+                "due_date": "2025-09-19T18:00:00Z",
                 "priority": "medium",
-                "reminder_type": "event"
+                "reminder_type": "habit",
+                "is_recurring": True,
+                "recurrence_pattern": "daily"
             }},
+            {{
+                "reminder_found": true,
+                "title": "Pay Rent",
+                "description": "Monthly rent payment.",
+                "due_date": "2025-10-01T00:00:00Z",
+                "priority": "urgent",
+                "reminder_type": "deadline",
+                "is_recurring": True,
+                "recurrence_pattern": "monthly"
+            
+            }}
             {{
                 "reminder_found": false
             }}
@@ -103,7 +119,9 @@ class ReminderAgent:
                 due_datetime=due_datetime,
                 reminder_type=ReminderType(data.get("reminder_type", "general")),
                 priority=Priority(data.get("priority", "medium")),
-                tags=message
+                tags=message,
+                is_recurring=data.get("is_recurring", False),
+                recurrence_pattern=data.get("recurrence_pattern", None)
             )
             
             await self.supabase_client.database.save_reminder(reminder)

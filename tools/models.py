@@ -99,7 +99,7 @@ class Reminder:
     priority: str = Priority.MEDIUM.value
     is_completed: bool = False
     is_recurring: bool = False
-    recurrence_pattern: Optional[str] = None
+    recurrence_pattern: Optional[str] = None #daily, weekly, monthly
     notification_sent: bool = False
     snooze_until: Optional[datetime] = None
     tags: Optional[str] = None

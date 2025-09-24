@@ -430,16 +430,17 @@ class SupabaseClient:
                 
                 # Get auth user data
                 auth_user_id = str(user_row['user_id'])
-                
+                print("#####User Row debug:", user_row)  # Debug print
                 try:
                     # Get user from Supabase Auth
                     auth_response = self.supabase.auth.admin.get_user_by_id(auth_user_id)
-                    
+                    print("###Auth response in get_user_by_telegram_id_auth:", auth_response)  # Debug print
                     if auth_response.user:
+                        user_data = auth_response.user.user_metadata
                         return {
                             'user_id': auth_user_id,
                             'email': auth_response.user.email,
-                            'name': auth_response.user.user_metadata.get('name'),
+                            'name': user_data.get('name') or user_data.get('full_name') or user_row['name'], #handle when user has registered via mobile app and telegram
                             'currency': user_row['currency'],
                             'language': user_row['language'],
                             'timezone': user_row['timezone'],

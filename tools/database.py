@@ -677,6 +677,17 @@ class Database:
                 WHERE id = $1
             """, reminder_id)
 
+    async def update_reminder_due_datetime(self, reminder_id: int, new_due_datetime: str):
+        """Update the due_datetime and reset notification_sent for a reminder"""
+        async with self.pool.acquire() as conn:
+            await conn.execute("""
+                UPDATE reminders
+                SET due_datetime = $1,
+                    notification_sent = FALSE,
+                    updated_at = NOW()
+                WHERE id = $2
+            """, new_due_datetime, reminder_id)
+
     # ============================================================================
     # USER SETTINGS OPERATIONS
     # ============================================================================
