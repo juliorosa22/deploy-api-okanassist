@@ -149,7 +149,7 @@ async def handle_upgrade(request: UpgradeRequest):
         # 1. Authenticate the user and get their data
         auth_request = AuthCheckRequest(telegram_id=request.user_id)
         user_data = await get_user_data(auth_request)
-
+        return {"success": False, "message": "Upgrades are currently disabled. Please contact support."}
         # 2. Check if the user is already premium
         if user_data.get("is_premium"):
             return {
@@ -179,6 +179,7 @@ async def handle_upgrade(request: UpgradeRequest):
         print(f"❌ Error in handle_upgrade: {e}")
         raise HTTPException(status_code=500, detail="An internal error occurred while processing your upgrade request.")
 
+##TODO improve the webhook to handle refunds and cancellations
 @app.post("/api/v1/webhooks/stripe")
 async def handle_stripe_webhook(request: Request):
     """Handles incoming webhooks from Stripe to confirm payments."""

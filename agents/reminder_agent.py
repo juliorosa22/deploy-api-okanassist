@@ -106,10 +106,10 @@ class ReminderAgent:
             
             if not data.get("reminder_found", True):
                 return get_message("reminder_not_found", language)
-            
+            print(f"✅ Parsed Data: {data}")
             due_datetime = self._parse_due_date(data.get("due_date")) if data.get("due_date") else None
             #TODO adapt to be in UTC before saving in database
-            print("Parsed due date:", due_datetime)
+            print(f"Parsed due date: {due_datetime}")
             reminder = Reminder(
                 user_id=user_id,
                 title=data.get("title", "No Title"),
@@ -132,6 +132,7 @@ class ReminderAgent:
             if due_datetime:
                 local_due_date = due_datetime.astimezone(user_tz)
                 display_due_date = local_due_date.strftime('%Y-%m-%d %H:%M')
+            print(f"Display due date: {display_due_date} | Original due date: {due_datetime}")
 
             return get_message(
                 "reminder_created",

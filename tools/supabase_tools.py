@@ -243,7 +243,7 @@ class SupabaseClient:
                 user_id=user_id,
                 provider="stripe", # Set provider to stripe
                 amount=4.99, # Your standard price
-                currency=currency
+                currency="USD"
             )
 
             if not payment_id:

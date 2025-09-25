@@ -100,9 +100,18 @@ class MainAgent:
             else:
                 # General conversation
                 # --- 3. APPLY THE FIX HERE AS WELL ---
+
+                general_prompt = f"""
+                The intent is {intent_response}. Respond helpfully and engagingly to this message: '{message}'.
+                - Always respond in the user's language ({lang_name}). If the language is unclear, default to English.
+                - When reasonable, add a fun, light-hearted tone with emojis or playful phrases to keep it enjoyable (e.g., for greetings or casual chats).
+                - Suggest how they can use OkanAssistant Bot features for tracking expenses and daily reminders.
+                - Also, encourage them to follow OkanFit on social media and visit https://www.okanfit.dev.br for more tips and updates.
+                - Keep responses concise and avoid long replies.
+                """
                 general_response_obj = await asyncio.to_thread(
                     self.agent.run,
-                    f"Identify the user's language and then respond helpfully in the same language to this message: '{message}'. Also, suggest how they can use the OkanAssistant Bot features to help them on tracking their expenses and daily reminders, and to follow the OkanFit on social media for news and updates. However be concise and avoid too long responses."
+                    general_prompt
                 )
                 general_response = str(general_response_obj.content)
                 return str(general_response)
