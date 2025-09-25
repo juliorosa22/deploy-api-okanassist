@@ -430,11 +430,11 @@ class SupabaseClient:
                 
                 # Get auth user data
                 auth_user_id = str(user_row['user_id'])
-                print("#####User Row debug:", user_row)  # Debug print
+                #print("#####User Row debug:", user_row)  # Debug print
                 try:
                     # Get user from Supabase Auth
                     auth_response = self.supabase.auth.admin.get_user_by_id(auth_user_id)
-                    print("###Auth response in get_user_by_telegram_id_auth:", auth_response)  # Debug print
+                    #print("###Auth response in get_user_by_telegram_id_auth:", auth_response)  # Debug print
                     if auth_response.user:
                         user_data = auth_response.user.user_metadata
                         return {

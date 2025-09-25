@@ -6,7 +6,8 @@ from agno.models.groq import Groq
 from messages import  MESSAGES, get_message
 # Fix: Use package imports
 from tools import SupabaseClient
-
+from agno.models.google import Gemini
+from agno.media import Audio
 class MainAgent:
     """Main agent that handles user management and routes messages to specialized agents"""
 
@@ -34,6 +35,21 @@ class MainAgent:
             - GREETING: For simple greetings and casual conversation.
             
             Respond with ONLY the classification category in uppercase (e.g., "TRANSACTION", "REMINDER_SUMMARY").
+            """
+        )
+        # Add Gemini agent for audio transcription
+        self.audio_agent = Agent(
+            name="AudioTranscriber",
+            model=Gemini(id="gemini-2.0-flash"),
+            instructions="""
+            You are an assistant that receives user audio input in any language.
+
+            1. Identify the user's spoken language from the audio.
+            2. Transcribe the audio to English text only.
+            3. Return ONLY the English transcript. Do not include any explanation, language name, or extra text.
+
+            Example output:
+            "Pay rent tomorrow at 10am."
             """
         )
     
@@ -95,6 +111,28 @@ class MainAgent:
             #print("failed to route message")
             print(f"❌ Main Agent: Error routing message: {e}")
             return "❌ Sorry, I encountered an error. Please try rephrasing your request."
+
+    async def route_audio(self, user_id: str, audio_path: str, user_data: Dict[str, Any]) -> str:
+        """Transcribe audio to English and route to the correct agent."""
+        try:
+            # Step 1: Transcribe audio to English using Gemini
+            #audio_dict = {"filepath": audio_path}
+            #print("Routing audio for transcription:", audio_dict)
+            print("Routing audio for transcription:", audio_path)
+            response_obj = await asyncio.to_thread(
+                self.audio_agent.run,
+                "Identify the user's language from the audio, then transcribe the audio to English. Return ONLY the English transcript.",
+                audio=[Audio(filepath=audio_path)]
+            )
+            transcript = str(response_obj.content).strip()
+            print("Transcribed audio (English):", transcript)
+
+            # Step 2: Route the transcript as a message
+            return await self.route_message(user_id, transcript, user_data)
+
+        except Exception as e:
+            print(f"❌ Main Agent: Error routing audio: {e}")
+            return "❌ Sorry, I couldn't process your audio. Please try again or use text input."
 
     def _get_help_content(self, lang: str = 'en') -> str:
         """Return help content without authentication"""

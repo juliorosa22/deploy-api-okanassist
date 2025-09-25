@@ -600,6 +600,9 @@ class Database:
     
     async def save_reminder(self, reminder: Reminder) -> Reminder:
         """Save a reminder to the database"""
+        if reminder.due_datetime :
+            import pytz
+            reminder.due_datetime = reminder.due_datetime.astimezone(pytz.utc).replace(tzinfo=None)
         async with self.pool.acquire() as conn:
             result = await conn.fetchrow("""
                 INSERT INTO reminders (

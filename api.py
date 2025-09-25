@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 import aiohttp
 # Import standardized messages
 from messages import MESSAGES, get_message
-
+import subprocess
 # Import models
 from models import (
     MessageRequest,
@@ -250,6 +250,46 @@ async def route_message(request: MessageRequest):
         print(f"❌ Unexpected error in route_message: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
+@app.post("/api/v1/process-audio")
+async def process_audio(user_id: str = Form(...), file: UploadFile = File(...)):
+    """Process user audio input and route to the correct agent."""
+    await initialize_services()
+    try:
+        if not main_agent:
+            raise HTTPException(status_code=503, detail="Service not ready")
+        # Step 1: Get user data
+        user_data = await get_user_data(AuthCheckRequest(telegram_id=user_id))
+        supabase_id = user_data.get('user_id', None)
+        lang = user_data.get('language', 'en')
+        user_timezone = user_data.get('timezone', 'UTC')
+
+        # Save uploaded audio file temporarily
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".ogg") as temp_file:
+            content = await file.read()
+            temp_file.write(content)
+            ogg_path = temp_file.name
+        mp3_path = ogg_path.replace(".ogg", ".mp3")
+        mp3_path=await convert_audio(ogg_path, mp3_path)
+        # Step 2: Route audio through main agent
+        result = await main_agent.route_audio(supabase_id, mp3_path, user_data)
+
+        # Clean up temp file
+        os.unlink(ogg_path)
+        os.unlink(mp3_path)
+
+        return {"success": True, "message": result}
+    except HTTPException:
+        raise
+    except Exception as e:
+        if 'temp_path' in locals():
+            try:
+                os.unlink(ogg_path)
+                os.unlink(mp3_path)
+            except:
+                pass
+        print(f"❌ Unexpected error in process_audio: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 ####### Transactions Endpoints
 
 @app.post("/api/v1/process-receipt")
@@ -299,7 +339,7 @@ async def process_receipt(user_id: str=Form(...), file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.post("/api/v1/process-bank-statement")
-async def process_bank_statement(user_id: str, file: UploadFile = File(...)):
+async def process_bank_statement(user_id: str = Form(...), file: UploadFile = File(...)):
     """Process bank statement PDF - REQUIRES AUTHENTICATION"""
     await initialize_services()
     try:
@@ -309,8 +349,9 @@ async def process_bank_statement(user_id: str, file: UploadFile = File(...)):
         # Step 1: Get user data using centralized helper
         user_data = await get_user_data(AuthCheckRequest(telegram_id=user_id))
         supabase_id = user_data.get('user_id', None)
+        lang_code = user_data.get('language', 'en')
         # Step 2: Consume credits (since auth is now verified) - Note: 0 credits for bank statement
-        credit_result = await check_and_consume_credits(supabase_id, 'bank_statement', 0, user_data)
+        credit_result = await check_and_consume_credits(supabase_id, 'bank_statement', 5, user_data)
 
         # Step 3: Process the bank statement
         # Save uploaded file temporarily
@@ -320,6 +361,11 @@ async def process_bank_statement(user_id: str, file: UploadFile = File(...)):
             temp_path = temp_file.name
 
         result = await transaction_agent.process_bank_statement(supabase_id, temp_path)
+
+        if not credit_result.get('is_premium', False):
+            credits_remaining = credit_result.get('credits_remaining', 0)
+            result += get_message("credit_warning", lang_code, credits_remaining=credits_remaining)
+        
 
         # Clean up temp file
         os.unlink(temp_path)
@@ -755,3 +801,20 @@ def infer_currency(timezone: str) -> str:
         return "USD"
     return "USD"
 
+async def convert_audio(input_path: str, output_path: str) -> str:
+    """
+    Convert .ogg audio file to .mp3 using ffmpeg.
+    Returns the output file path.
+    """
+    try:
+        # Run ffmpeg to convert .ogg to .mp3
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", input_path, output_path],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        return output_path
+    except Exception as e:
+        print(f"❌ Audio conversion failed: {e}")
+        raise RuntimeError("Audio conversion failed")

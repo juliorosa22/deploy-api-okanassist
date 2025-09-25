@@ -108,7 +108,8 @@ class ReminderAgent:
                 return get_message("reminder_not_found", language)
             
             due_datetime = self._parse_due_date(data.get("due_date")) if data.get("due_date") else None
-            
+            #TODO adapt to be in UTC before saving in database
+            print("Parsed due date:", due_datetime)
             reminder = Reminder(
                 user_id=user_id,
                 title=data.get("title", "No Title"),
@@ -116,7 +117,7 @@ class ReminderAgent:
                 source_platform="telegram",
                 is_completed=False,
                 notification_sent=False,
-                due_datetime=due_datetime,
+                due_datetime=due_datetime, #TODO adapt to be in UTC before saving in database
                 reminder_type=ReminderType(data.get("reminder_type", "general")),
                 priority=Priority(data.get("priority", "medium")),
                 tags=message,
