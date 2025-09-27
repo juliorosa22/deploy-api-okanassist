@@ -108,8 +108,13 @@ class ReminderAgent:
                 return get_message("reminder_not_found", language)
             print(f"✅ Parsed Data: {data}")
             due_datetime = self._parse_due_date(data.get("due_date")) if data.get("due_date") else None
+            due_datetime_utc = None
+            if due_datetime:
+                due_datetime_utc = due_datetime.astimezone(pytz.utc)
+            else:
+                due_datetime_utc = None
             #TODO adapt to be in UTC before saving in database
-            print(f"Parsed due date: {due_datetime}")
+            print(f"Parsed due date: {due_datetime_utc}")
             reminder = Reminder(
                 user_id=user_id,
                 title=data.get("title", "No Title"),
@@ -117,7 +122,7 @@ class ReminderAgent:
                 source_platform="telegram",
                 is_completed=False,
                 notification_sent=False,
-                due_datetime=due_datetime, #TODO adapt to be in UTC before saving in database
+                due_datetime=due_datetime_utc, #TODO adapt to be in UTC before saving in database
                 reminder_type=ReminderType(data.get("reminder_type", "general")),
                 priority=Priority(data.get("priority", "medium")),
                 tags=message,
@@ -130,8 +135,8 @@ class ReminderAgent:
             # Format due date for display in user's local time
             display_due_date = "N/A"
             if due_datetime:
-                local_due_date = due_datetime.astimezone(user_tz)
-                display_due_date = local_due_date.strftime('%Y-%m-%d %H:%M')
+                #local_due_date = due_datetime.astimezone(user_tz)
+                display_due_date = due_datetime.strftime('%Y-%m-%d %H:%M')
             print(f"Display due date: {display_due_date} | Original due date: {due_datetime}")
 
             return get_message(

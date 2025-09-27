@@ -50,7 +50,7 @@ class Database:
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS transactions (
                     id SERIAL PRIMARY KEY,
-                    user_id UUID NOT NULL,
+                    user_id UUID NOT NULL REFERENCES user_settings(user_id) ON DELETE CASCADE,
                     amount DECIMAL(12,2) NOT NULL CHECK (amount > 0),
                     description TEXT NOT NULL,
                     category TEXT NOT NULL,
@@ -91,7 +91,7 @@ class Database:
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS reminders (
                     id SERIAL PRIMARY KEY,
-                    user_id UUID NOT NULL,
+                    user_id UUID NOT NULL REFERENCES user_settings(user_id) ON DELETE CASCADE,
                     title TEXT NOT NULL,
                     description TEXT NOT NULL,
                     source_platform TEXT DEFAULT 'web_app' CHECK (source_platform IN ('telegram', 'whatsapp', 'mobile_app', 'web_app')),
@@ -173,7 +173,7 @@ class Database:
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS payments (
                     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                    user_id UUID NOT NULL,
+                    user_id UUID NOT NULL REFERENCES user_settings(user_id) ON DELETE CASCADE,
                     provider TEXT NOT NULL CHECK (provider IN ('paypal', 'mercadopago', 'stripe')),
                     amount NUMERIC NOT NULL CHECK (amount > 0),
                     currency TEXT NOT NULL,
@@ -600,9 +600,9 @@ class Database:
     
     async def save_reminder(self, reminder: Reminder) -> Reminder:
         """Save a reminder to the database"""
-        if reminder.due_datetime :
-            import pytz
-            reminder.due_datetime = reminder.due_datetime.astimezone(pytz.utc).replace(tzinfo=None)
+        #if reminder.due_datetime :
+        #    import pytz
+        #    reminder.due_datetime = reminder.due_datetime.astimezone(pytz.utc).replace(tzinfo=None)
         async with self.pool.acquire() as conn:
             result = await conn.fetchrow("""
                 INSERT INTO reminders (
