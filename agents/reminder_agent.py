@@ -38,7 +38,7 @@ class ReminderAgent:
                 "reminder_found": true,
                 "title": "Call Mom",
                 "description": "Remember to call Mom to check in tomorrow.",
-                "due_date": "2025-09-18T15:00:00Z",
+                "due_datetime": "2025-09-18T15:00:00Z",
                 "priority": "high",
                 "reminder_type": "habit",
                 "is_recurring": True,
@@ -48,7 +48,7 @@ class ReminderAgent:
                 "reminder_found": true,
                 "title": "Gym Workout",
                 "description": "Remember to attend the gym workout session.",
-                "due_date": "2025-09-19T18:00:00Z",
+                "due_datetime": "2025-09-19T18:00:00Z",
                 "priority": "medium",
                 "reminder_type": "habit",
                 "is_recurring": True,
@@ -58,7 +58,7 @@ class ReminderAgent:
                 "reminder_found": true,
                 "title": "Pay Rent",
                 "description": "Monthly rent payment.",
-                "due_date": "2025-10-01T00:00:00Z",
+                "due_datetime": "2025-10-01T00:00:00Z",
                 "priority": "urgent",
                 "reminder_type": "deadline",
                 "is_recurring": True,
@@ -91,6 +91,7 @@ class ReminderAgent:
             extraction_prompt = f"""
             Analyse the user language.
             The user's current date and time is {user_now_iso}.
+            All times in the user's message are in their local timezone ({user_timezone}). Convert relative expressions like "tomorrow at 3pm" or "in 2 hours" into a specific UTC ISO 8601 format.
             Analyze the following user message and return the JSON output based on your instructions.
 
             **User Message:** "{message}"
@@ -99,22 +100,31 @@ class ReminderAgent:
             response_obj = await asyncio.to_thread(self.agent.run, extraction_prompt)
             response_str = str(response_obj.content)
             print(f"🤖 LLM Response: {response_str}")
-            try:
-                data = json.loads(response_str)
-            except json.JSONDecodeError:
+
+            # Extract JSON from the response (handles extra text/markdown)
+            json_match = re.search(r'\{.*\}', response_str, re.DOTALL)
+            data = {}
+            if json_match:
+                try:
+                    data = json.loads(json_match.group())
+                except json.JSONDecodeError:
+                    print("⚠️ JSON parsing failed, using fallback.")
+                    data = self._fallback_parse(message, language)
+            else:
+                print("⚠️ No JSON found in response, using fallback.")
                 data = self._fallback_parse(message, language)
-            
+
             if not data.get("reminder_found", True):
                 return get_message("reminder_not_found", language)
             print(f"✅ Parsed Data: {data}")
-            due_datetime = self._parse_due_date(data.get("due_date")) if data.get("due_date") else None
+            due_datetime = self._parse_due_date(data.get("due_datetime")) if data.get("due_datetime") else None
             due_datetime_utc = None
             if due_datetime:
-                due_datetime_utc = due_datetime.astimezone(pytz.utc)
-            else:
-                due_datetime_utc = None
-            #TODO adapt to be in UTC before saving in database
-            print(f"Parsed due date: {due_datetime_utc}")
+                # Convert aware datetime to naive UTC for database storage
+                due_datetime_utc = due_datetime.astimezone(pytz.utc).replace(tzinfo=None)
+            print(f"Original due date: {due_datetime}")
+            print(f"Parsed due date (naive UTC): {due_datetime_utc}")
+
             reminder = Reminder(
                 user_id=user_id,
                 title=data.get("title", "No Title"),
@@ -122,7 +132,7 @@ class ReminderAgent:
                 source_platform="telegram",
                 is_completed=False,
                 notification_sent=False,
-                due_datetime=due_datetime_utc, #TODO adapt to be in UTC before saving in database
+                due_datetime=due_datetime_utc,  # Use naive UTC here
                 reminder_type=ReminderType(data.get("reminder_type", "general")),
                 priority=Priority(data.get("priority", "medium")),
                 tags=message,
@@ -132,11 +142,13 @@ class ReminderAgent:
             
             await self.supabase_client.database.save_reminder(reminder)
             
-            # Format due date for display in user's local time
+            # Format due date for display in user's local time (convert from naive UTC)
             display_due_date = "N/A"
-            if due_datetime:
-                #local_due_date = due_datetime.astimezone(user_tz)
-                display_due_date = due_datetime.strftime('%Y-%m-%d %H:%M')
+            if due_datetime_utc:
+                # Localize naive UTC to aware UTC, then convert to user timezone
+                utc_aware = pytz.utc.localize(due_datetime_utc)
+                local_due_date = utc_aware.astimezone(user_tz)
+                display_due_date = local_due_date.strftime('%Y-%m-%d %H:%M')
             print(f"Display due date: {display_due_date} | Original due date: {due_datetime}")
 
             return get_message(
