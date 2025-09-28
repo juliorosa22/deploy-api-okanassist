@@ -10,6 +10,7 @@ import tempfile
 from datetime import datetime
 from dotenv import load_dotenv
 import aiohttp
+import pytz  # Ensure pytz is imported at the top
 # Import standardized messages
 from messages import MESSAGES, get_message
 import subprocess
@@ -432,7 +433,7 @@ async def batch_notify_reminders(request: Request):
     try:
         data = await request.json()
         reminders = data.get("reminders", [])
-
+        print(f"Received {len(reminders)} reminders for notification.")
         notified = []
         for reminder_data in reminders:
             reminder_id = reminder_data["reminder_id"]
@@ -440,9 +441,10 @@ async def batch_notify_reminders(request: Request):
             title = reminder_data["title"]
             description = reminder_data["description"]
             due_datetime = reminder_data["due_datetime"]
+            timezone = reminder_data.get("timezone", "UTC")  # Extract timezone
 
-            # Send notification (implement your Telegram bot logic here)
-            await send_telegram_notification(telegram_id, title, description, due_datetime)
+            # Send notification (pass timezone for conversion)
+            await send_telegram_notification(telegram_id, title, description, due_datetime, timezone)
 
             # Mark as notified in DB
             await supabase_client.database.mark_reminder_notified(reminder_id)
@@ -452,7 +454,6 @@ async def batch_notify_reminders(request: Request):
             is_recurring = reminder_data.get("is_recurring", False)
             recurrence_pattern = reminder_data.get("recurrence_pattern")
             if is_recurring and recurrence_pattern:
-                # Calculate next due date
                 dt = datetime.fromisoformat(due_datetime.replace("Z", "+00:00"))
                 if recurrence_pattern == "daily":
                     next_due = dt + timedelta(days=1)
@@ -464,7 +465,6 @@ async def batch_notify_reminders(request: Request):
                     next_due = None
 
                 if next_due:
-                    # Update the existing reminder's due_datetime and reset notification_sent
                     await supabase_client.database.update_reminder_due_datetime(
                         reminder_id,
                         next_due.isoformat().replace("+00:00", "Z")
@@ -657,19 +657,30 @@ async def check_authentication(request: AuthCheckRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail="An error occurred during authentication.")
 
 
-async def send_telegram_notification(telegram_id: str, title: str, description: str, due_datetime: str):
-    """Send notification via Telegram bot"""
-    #bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
-    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-    
-    message = f"🔔 Reminder: {title}\n\n{description}\n\nDue: {due_datetime}"
-    
-    async with aiohttp.ClientSession() as session:
-        await session.post(url, json={
-            "chat_id": telegram_id,
-            "text": message,
-            "parse_mode": "Markdown"
-        })
+async def send_telegram_notification(telegram_id: str, title: str, description: str, due_datetime: str, timezone: str = "UTC"):
+    """Send notification via Telegram bot, converting due_datetime to user's timezone."""
+    try:
+        # Parse UTC datetime
+        utc_dt = datetime.fromisoformat(due_datetime.replace("Z", "+00:00")).replace(tzinfo=pytz.utc)
+        
+        # Convert to user's timezone
+        user_tz = pytz.timezone(timezone)
+        local_dt = utc_dt.astimezone(user_tz)
+        
+        # Format for display (e.g., "2025-09-29 10:00")
+        formatted_due = local_dt.strftime('%Y-%m-%d %H:%M')
+        
+        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+        message = f"🔔 Reminder: {title}\n\n{description}\n\nDue: {formatted_due} ({timezone})"
+        
+        async with aiohttp.ClientSession() as session:
+            await session.post(url, json={
+                "chat_id": telegram_id,
+                "text": message,
+                "parse_mode": "Markdown"
+            })
+    except Exception as e:
+        print(f"❌ Error sending Telegram notification: {e}")
 
 # Wrap the session manager access and use the exception-based check_authentication
 async def get_user_data(auth_request: AuthCheckRequest) -> Dict[str, Any]:
