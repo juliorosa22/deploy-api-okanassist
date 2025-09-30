@@ -216,6 +216,30 @@ class SupabaseClient:
         await self.database.update_payment_status(payment_id, "success", transaction_id, subscription_id)
         print(f"✅ Payment {payment_id} processed successfully")
 
+    async def update_user_premium_status(self, telegram_id: str, is_premium: bool, premium_days: int = 30):
+        """Update user's premium status"""
+        if not self.connected:
+            await self.connect()
+        
+        async with self.database.pool.acquire() as conn:
+            if is_premium:
+                # Set premium_until to now + premium_days
+                new_premium_until = datetime.now() + timedelta(days=premium_days)
+                await conn.execute("""
+                    UPDATE user_settings 
+                    SET is_premium = TRUE, premium_until = $1, updated_at = NOW()
+                    WHERE telegram_id = $2
+                """, new_premium_until, telegram_id)
+                print(f"✅ User {telegram_id} upgraded to premium until {new_premium_until}")
+            else:
+                # Revoke premium
+                await conn.execute("""
+                    UPDATE user_settings 
+                    SET is_premium = FALSE, premium_until = NULL, updated_at = NOW()
+                    WHERE telegram_id = $1
+                """, telegram_id)
+                print(f"✅ User {telegram_id} premium revoked")
+
     async def process_payment_failure(self, payment_id: str, reason: str = "failed"):
         """Process failed payment"""
         if not self.connected:
@@ -252,7 +276,7 @@ class SupabaseClient:
             # 2. Create a Stripe Checkout Session
             price_id = os.getenv("STRIPE_PRICE_ID")
             bot_username = os.getenv("TELEGRAM_BOT_USERNAME", "")
-            print("bot_username", bot_username)
+            #print("bot_username", bot_username)
             success_url = f"https://t.me/{bot_username}?start=payment_success"
             cancel_url = f"https://t.me/{bot_username}?start=payment_cancelled"
 
@@ -263,6 +287,7 @@ class SupabaseClient:
                 cancel_url=cancel_url,
                 # This is CRUCIAL for linking the Stripe session back to our database
                 client_reference_id=payment_id,
+                metadata={'telegram_id': user_data.get('telegram_id')}
             )
 
             return {
@@ -275,59 +300,162 @@ class SupabaseClient:
             return {"success": False, "message": str(e)}
 
 
-    
-    async def handle_stripe_webhook(self, payload: bytes, sig_header: str) -> Tuple[bool, Optional[str]]:
+    async def handle_stripe_webhook(self, payload: bytes, sig_header: str) -> Dict[str, Any]:
         """Handle Stripe payment webhook"""
+        result = {"success": False, "telegram_id": None, "message": None}
+        
         webhook_secret = os.getenv("STRIPE_WEBHOOK_SECRET")
         if not webhook_secret:
-            print("❌ Stripe webhook secret is not configured.")
-            return False, None
+            result["message"] = "❌ Stripe webhook secret is not configured."
+            return result
 
         try:
             event = stripe.Webhook.construct_event(
                 payload=payload, sig_header=sig_header, secret=webhook_secret
             )
         except ValueError as e:
-            # Invalid payload
-            print(f"❌ Invalid webhook payload: {e}")
-            return False, None
+            result["message"] = f"❌ Invalid webhook payload: {e}"
+            return result
         except stripe.error.SignatureVerificationError as e:
-            # Invalid signature
-            print(f"❌ Invalid webhook signature: {e}")
-            return False, None
+            result["message"] = f"❌ Invalid webhook signature: {e}"
+            return result
 
-        # Handle the checkout.session.completed event
-        if event['type'] == 'checkout.session.completed':
-            session = event['data']['object']
-            
-            # Extract the IDs we need
-            payment_id = session.get('client_reference_id')
-            subscription_id = session.get('subscription')
-            customer_id = session.get('customer') # Stripe customer ID
+        # Extract common fields (may not be present for all events)
+        event_data = event['data']['object']
+        payment_id = event_data.get('client_reference_id')
+        subscription_id = event_data.get('subscription')
+        customer_id = event_data.get('customer')
+        telegram_id = event_data.get('metadata', {}).get('telegram_id') if hasattr(event_data, 'get') and 'metadata' in event_data else None
+        
+        if telegram_id:
+            result["telegram_id"] = telegram_id
+        elif customer_id:
+            telegram_id = await self.get_telegram_id_from_customer(customer_id)
+            if telegram_id:
+                result["telegram_id"] = telegram_id
 
+        print(f"Webhook event type: {event['type']}")
+
+        # Handle critical events
+        if event['type'] == 'checkout.session.completed':    
             if not payment_id:
-                print("❌ Webhook received without a client_reference_id (payment_id).")
-                return False, None
-
+                result["message"] = "❌ Webhook received without a client_reference_id (payment_id)."
+                return result
             print(f"✅ checkout.session.completed for payment_id: {payment_id}")
-            
             # Update our database
-            await self.process_payment_success(payment_id, customer_id, subscription_id)
-            
-            # Find the payment record and get the user_id, then fetch telegram_id
-            payment_record = await self.database.get_payment_by_id(payment_id)
-            user_id = payment_record.get("user_id")
-            user_settings = await self.database.get_user_settings_by_user_id(user_id)
-            telegram_id = user_settings.get("telegram_id")
-            
+            await self.process_payment_success(payment_id, customer_id, subscription_id) #update the paymment record data
+            await self.update_user_premium_status(telegram_id, True, premium_days=30) # update user premium status and premium_until
+ 
+            if customer_id and telegram_id:
+                portal_session = stripe.billing_portal.Session.create(
+                    customer=customer_id,
+                    return_url=f"https://t.me/{os.getenv('TELEGRAM_BOT_USERNAME')}?start=portal_return"
+                )
+                portal_url = portal_session.url
+                # Send Telegram message with portal link
+                result["success"] = True
+                result["message"] = f"🎉 Subscription activated! Manage your account here:\n {portal_url}"
+                
             # Return both success and telegram_id
-            return True, telegram_id
+        
+        #user canceled subscription event
+        elif event['type'] == 'customer.subscription.updated':
+            if telegram_id and event_data.get('cancel_at_period_end'):
+                # Subscription is set to cancel at period end
+                result["success"] = True
+                result["message"] = "⚠️ Your subscription has been canceled and will end at the current billing period."
+            else:
+                # Not a cancellation, acknowledge as non-critical
+                print(f"ℹ️ Received non-critical subscription update: {event['type']} - acknowledging without action")
+                result["success"] = True
+                result["message"] = None
+        
+        #subscription expired
+        elif event['type'] == 'customer.subscription.deleted':
+            if telegram_id:
+                # Revoke premium in DB
+                await self.update_user_premium_status(telegram_id, False)
+                # Notify user
+                result["success"] = True
+                #result["telegram_id"] = telegram_id
+                result["message"] = "❌ Your subscription has been canceled. You can resubscribe anytime via /upgrade."
+                #await self.send_telegram_message(telegram_id, "❌ Your subscription has been canceled. You can resubscribe anytime via /upgrade.")
             
+        # Handle invoice.payment_failed (payment failures)
+        elif event['type'] == 'invoice.payment_failed':
+            await self.process_payment_failure(payment_id, "payment_failed")
+            if telegram_id:
+                if customer_id:
+                    portal_session = stripe.billing_portal.Session.create(
+                        customer=customer_id,
+                        return_url=f"https://t.me/{os.getenv('TELEGRAM_BOT_USERNAME')}?start=portal_return"
+                    )
+                    portal_url = portal_session.url
+                    result["success"] = True
+                    result["message"] = f"⚠️ Payment failed. Update your payment method here: {portal_url}"
+                else:
+                    result["success"] = True
+                    result["message"] = f"⚠️ Payment failed. Please contact support to update your payment method."
+                #
+                #await self.send_telegram_message(telegram_id, f"⚠️ Payment failed. Update your payment method here: {portal_url}")
+
+    # Handle charge.dispute.created (refunds/disputes - optional)
+        elif event['type'] == 'charge.dispute.created':
+            result["success"] = True
+            result["message"] = "⚠️ A refund request has been initiated. Check your email for updates."
         else:
-            print(f"ℹ️ Received unhandled Stripe event type: {event['type']}")
-            return True, None # Return True to acknowledge receipt of the event
-        return False, None
-    
+            # For non-critical events, acknowledge successfully to avoid retries
+            print(f"ℹ️ Received non-critical event: {event['type']} - acknowledging without action")
+            result["success"] = True
+            result["message"] = None
+
+        return result
+  
+    async def get_telegram_id_from_customer(self, customer_id: str) -> Optional[str]:
+        """Get telegram_id from customer_id via payments table"""
+        if not self.connected:
+            await self.connect()
+        async with self.database.pool.acquire() as conn:
+            result = await conn.fetchrow("""
+                SELECT u.telegram_id FROM user_settings u
+                JOIN payments p ON u.user_id = p.user_id
+                WHERE p.transaction_id = $1
+                LIMIT 1
+            """, customer_id)
+            return result['telegram_id'] if result else None
+
+    async def get_customer_id_from_payments(self, user_id: str) -> Optional[str]:
+        """Get the latest customer_id for a user from payments table"""
+        if not self.connected:
+            await self.connect()
+        async with self.database.pool.acquire() as conn:
+            result = await conn.fetchrow("""
+                SELECT transaction_id FROM payments 
+                WHERE user_id = $1 AND transaction_id IS NOT NULL 
+                ORDER BY created_at DESC LIMIT 1
+            """, user_id)
+            return result['transaction_id'] if result else None
+
+    #this function will be used to create a customer portal link for the user to manage their subscription when the user request its profile data
+    async def create_customer_portal_link(self, customer_id: str) -> Dict[str, Any]:
+        """Generate a new Customer Portal link for the given customer_id"""
+        try:
+            portal_session = stripe.billing_portal.Session.create(
+                customer=customer_id,
+                return_url=f"https://t.me/{os.getenv('TELEGRAM_BOT_USERNAME')}?start=portal_return"
+            )
+            return {
+                "success": True,
+                "portal_url": portal_session.url
+            }
+        except Exception as e:
+            print(f"❌ Error creating portal link for customer {customer_id}: {e}")
+            return {
+                "success": False,
+                "message": "Unable to generate portal link. Please try again later."
+            }
+
+
     async def sign_up_user_with_auth(self, email: str, password: str, user_metadata: Dict[str, Any] = None) -> Dict[str, Any]:
         """Sign up user with Supabase Auth"""
         try:
@@ -488,6 +616,31 @@ class SupabaseClient:
         except Exception as e:
             print(f"❌ Error creating new user settings: {e}")
             raise
+
+    async def get_telegram_id_by_email(self, email: str) -> Optional[str]:
+        """Get Telegram ID by email"""
+        try:
+            if not self.connected:
+                await self.connect()
+                
+            # First get user from auth
+            auth_user = await self.get_user_by_email_auth(email)
+            if not auth_user:
+                return None
+            
+            user_id = auth_user['user_id']
+            
+            # Now get telegram_id from user_settings
+            async with self.database.pool.acquire() as conn:
+                result = await conn.fetchrow("""
+                    SELECT telegram_id FROM user_settings WHERE user_id = $1
+                """, user_id)
+                
+                return result['telegram_id'] if result else None
+                
+        except Exception as e:
+            print(f"❌ Error getting telegram ID by email: {e}")
+            return None
 
     # Update ensure_user_exists method to work with auth
     async def ensure_user_exists_auth(self, telegram_id: str, user_data: dict):

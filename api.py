@@ -18,10 +18,9 @@ import subprocess
 from models import (
     MessageRequest,
     TransactionResponse,
-    ReminderResponse,
     SummaryRequest,
     StartRequest,
-    UserCheckRequest,
+    NotificationRequest,
     RegisterRequest,
     AuthCheckRequest,
     UpgradeRequest
@@ -150,12 +149,12 @@ async def handle_upgrade(request: UpgradeRequest):
         # 1. Authenticate the user and get their data
         auth_request = AuthCheckRequest(telegram_id=request.user_id)
         user_data = await get_user_data(auth_request)
-        return {"success": False, "message": "Upgrades are currently disabled. Please contact support."}
+        #return {"success": False, "message": "Upgrades are currently disabled. Please contact support."}
         # 2. Check if the user is already premium
         if user_data.get("is_premium"):
             return {
                 "success": False,
-                "message": "✅ You are already a Premium user! You have unlimited access to all features."
+                "message": get_message("already_premium", user_data.get("language", "en"))
             }
 
         # 3. Generate the payment link
@@ -195,9 +194,14 @@ async def handle_stripe_webhook(request: Request):
         raise HTTPException(status_code=400, detail="Missing Stripe-Signature header")
 
     try:
-        success, telegram_id = await supabase_client.handle_stripe_webhook(payload, sig_header)
-
+        result = await supabase_client.handle_stripe_webhook(payload, sig_header)
+        success = result.get("success", False)
+        telegram_id = result.get("telegram_id", None)
+        message = result.get("message", "")
+        print(f"Webhook processed: success={success}, telegram_id={telegram_id}, message={message}")
+        
         if success and telegram_id:
+            await send_telegram_message(telegram_id, message) if message else None
             user_data = await supabase_client.get_user_by_telegram_id_auth(telegram_id)
             if user_data:
                 session_manager.create_session(telegram_id, user_data)
@@ -293,6 +297,37 @@ async def process_audio(user_id: str = Form(...), file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail="Internal server error")
 
 ####### Transactions Endpoints
+
+
+@app.post("/api/v1/process-notification")
+async def process_notification(request: NotificationRequest):
+    """Handle automated transactions parser - REQUIRES AUTHENTICATION"""
+    print("here: in process_notification")
+    await initialize_services()
+    try:
+        # Step 1: Check if telegram_id is provided; if not, fetch it using fetch_telegram_id
+        telegram_id = request.telegram_id
+        if not telegram_id:
+            fetch_result = await fetch_telegram_id(request)
+            if not fetch_result.get("success"):
+                raise HTTPException(status_code=404, detail="Telegram ID not found for the provided email")
+            telegram_id = fetch_result["telegram_id"]
+        
+        # Step 2: Proceed with authentication using get_user_data
+        user_data = await get_user_data(AuthCheckRequest(telegram_id=telegram_id))
+        # At this point, user is authenticated, and user_data is available
+        
+        # Step 3: Print the data received (for debugging/logging)
+        print(f"📨 Processed notification data: {request.model_dump()}")
+        
+        # Step 4: Return the response
+        return {"message": "Processed", "telegram_id": telegram_id}
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Unexpected error in process_notification: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.post("/api/v1/process-receipt")
 async def process_receipt(user_id: str=Form(...), file: UploadFile = File(...)):
@@ -583,8 +618,12 @@ async def get_profile(user_id: str):
     try:
         # Step 1: Get user data using centralized helper
         user_data = await get_user_data(AuthCheckRequest(telegram_id=user_id))
-        
-        return {"success": True, "user_data": user_data}
+        if user_data.get("is_premium"):
+            customer_id = await supabase_client.get_customer_id_from_payments(user_data["user_id"])
+            manage_url = await supabase_client.create_customer_portal_link(customer_id)
+            return {"success": True, "user_data": user_data, "manage_url": manage_url}
+        else:
+            return {"success": True, "user_data": user_data, "manage_url": None}
 
     except HTTPException:
         raise
@@ -655,6 +694,32 @@ async def check_authentication(request: AuthCheckRequest) -> Dict[str, Any]:
     except Exception as e:
         print(f"❌ Uncaught error in check_authentication: {e}")
         raise HTTPException(status_code=500, detail="An error occurred during authentication.")
+
+##used for sending payments telegram messages to users
+async def send_telegram_message(telegram_id: str, message: str):
+    """Send message via Telegram Bot API"""
+    bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    async with aiohttp.ClientSession() as session:
+        await session.post(url, json={"chat_id": telegram_id, "text": message})
+
+#function used when the notification system sends the first automated transaction to api
+async def fetch_telegram_id(request: NotificationRequest):
+    """Fetch Telegram ID by email"""
+    await initialize_services()
+    try:
+        if not supabase_client:
+            raise HTTPException(status_code=503, detail="Service not ready")
+        telegram_id = await supabase_client.get_telegram_id_by_email(request.email)
+        if not telegram_id:
+            return {"success": False, "message": "Telegram ID not found"}
+        return {"success": True, "telegram_id": telegram_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Unexpected error in fetch_telegram_id: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 
 
 async def send_telegram_notification(telegram_id: str, title: str, description: str, due_datetime: str, timezone: str = "UTC"):

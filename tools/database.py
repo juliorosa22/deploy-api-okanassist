@@ -852,6 +852,7 @@ class Database:
                 'updated_at': row['updated_at']
             }
 
+    
    
     # ============================================================================
     # UTILITY METHODS

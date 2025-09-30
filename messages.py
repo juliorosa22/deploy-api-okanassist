@@ -107,7 +107,7 @@ Just talk to me naturally - I understand! 🎉
         "session_expired": "⏰ Your session has expired. Please log in again with /start.",
         "generic_error": "❌ Something went wrong. Please try again or contact support.",
         "upgrade_to_premium": "🚀 *Upgrade to Premium!*\n\nClick the link below to unlock unlimited AI features.\n\n[Upgrade Now]({stripe_url})",
-        
+        "already_premium": "✅ You are already a premium user! Enjoy unlimited access to all features.",
 
     },
     "es": {
@@ -172,7 +172,8 @@ Just talk to me naturally - I understand! 🎉
                 "💵 *Monto:* ${amount:.2f}\n"
                 "📂 *Categoría:* {category}\n"
                 "📊 *Tipo:* {transaction_type}\n"
-            )
+            ),
+        "already_premium": "✅ ¡Ya eres un usuario premium! Disfruta de acceso ilimitado a todas las funciones.",
         
     },
     "pt": {
@@ -238,6 +239,7 @@ Just talk to me naturally - I understand! 🎉
         "session_expired": "⏰ Sua sessão expirou. Por favor, faça login novamente com /start.",
         "generic_error": "❌ Algo deu errado. Por favor, tente novamente ou entre em contato com o suporte.",
         "upgrade_to_premium": "🚀 *Faça o Upgrade para Premium!*\n\nClique no link abaixo para desbloquear recursos ilimitados de IA.\n\n[Fazer Upgrade Agora]({stripe_url})",
+        "already_premium": "✅ Você já é um usuário premium! Aproveite o acesso ilimitado a todos os recursos.",
         
     }
 }

@@ -50,6 +50,13 @@ class AuthCheckRequest(BaseModel):
     timezone: Optional[str] = "UTC"
     currency: Optional[str] = "USD"
 
+class NotificationRequest(BaseModel):
+    email: str
+    telegram_id: Optional[str] = None
+    app: str  # New field for the app identifier
+    title: str  # New field for the notification title
+    text: str  # New field for the notification text
+
 class UpgradeRequest(BaseModel):
     user_id: str
 
