@@ -90,7 +90,7 @@ app.add_middleware(
 )
 
 # API Endpoints
-@app.get("/api/v1/auth/confirm", response_class=JSONResponse)
+@app.get("/okanassist/v1/auth/confirm", response_class=JSONResponse)
 async def handle_email_confirmation():
     """
     Simplified for GCF: Return JSON instead of HTML.
@@ -98,7 +98,7 @@ async def handle_email_confirmation():
     download_url = os.getenv("APP_DOWNLOAD_URL", "https://play.google.com/store/apps/details?id=com.okanassist")
     return {"message": "Registration confirmed! Download the app here.", "download_url": download_url}
 
-@app.post("/api/v1/start")
+@app.post("/okanassist/v1/start")
 async def handle_start(request: StartRequest):
     """Handle /start command with authentication handling"""
     await initialize_services()  # Ensure services are ready
@@ -136,12 +136,12 @@ async def handle_start(request: StartRequest):
         print(f"❌ Unhandled Exception in handle_start: {e}")
         raise HTTPException(status_code=500, detail="An internal server error occurred.")
 
-@app.get("/api/v1/help")
+@app.get("/okanassist/v1/help")
 async def handle_help(language_code: Optional[str] = 'en'):
     """Handle /help command - No authentication required"""
     return {"success": True, "message": get_message("help_message", language_code)}
 
-@app.post("/api/v1/upgrade")
+@app.post("/okanassist/v1/upgrade")
 async def handle_upgrade(request: UpgradeRequest):
     """Handles the premium upgrade request and generates a payment link."""
     await initialize_services()
@@ -180,7 +180,7 @@ async def handle_upgrade(request: UpgradeRequest):
         raise HTTPException(status_code=500, detail="An internal error occurred while processing your upgrade request.")
 
 ##TODO improve the webhook to handle refunds and cancellations
-@app.post("/api/v1/webhooks/stripe")
+@app.post("/okanassist/v1/webhooks/stripe")
 async def handle_stripe_webhook(request: Request):
     """Handles incoming webhooks from Stripe to confirm payments."""
     await initialize_services()
@@ -217,7 +217,7 @@ async def handle_stripe_webhook(request: Request):
         print(f"❌ Error processing Stripe webhook: {e}")
         return JSONResponse(content={"status": "error"}, status_code=500)
 
-@app.post("/api/v1/route-message")
+@app.post("/okanassist/v1/route-message")
 async def route_message(request: MessageRequest):
     """Route message through main agent - REQUIRES AUTHENTICATION + CREDITS"""
     await initialize_services()
@@ -256,7 +256,7 @@ async def route_message(request: MessageRequest):
         print(f"❌ Unexpected error in route_message: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@app.post("/api/v1/process-audio")
+@app.post("/okanassist/v1/process-audio")
 async def process_audio(user_id: str = Form(...), file: UploadFile = File(...)):
     """Process user audio input and route to the correct agent."""
     await initialize_services()
@@ -299,7 +299,7 @@ async def process_audio(user_id: str = Form(...), file: UploadFile = File(...)):
 ####### Transactions Endpoints
 
 
-@app.post("/api/v1/process-notification")
+@app.post("/okanassist/v1/process-notification")
 async def process_notification(request: NotificationRequest):
     """Handle automated transactions parser - REQUIRES AUTHENTICATION"""
     print("here: in process_notification")
@@ -329,7 +329,7 @@ async def process_notification(request: NotificationRequest):
         print(f"❌ Unexpected error in process_notification: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@app.post("/api/v1/process-receipt")
+@app.post("/okanassist/v1/process-receipt")
 async def process_receipt(user_id: str=Form(...), file: UploadFile = File(...)):
     """Process receipt image - REQUIRES AUTHENTICATION + CREDITS"""
     await initialize_services()
@@ -375,7 +375,7 @@ async def process_receipt(user_id: str=Form(...), file: UploadFile = File(...)):
         print(f"❌ Unexpected error in process_receipt: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@app.post("/api/v1/process-bank-statement")
+@app.post("/okanassist/v1/process-bank-statement")
 async def process_bank_statement(user_id: str = Form(...), file: UploadFile = File(...)):
     """Process bank statement PDF - REQUIRES AUTHENTICATION"""
     await initialize_services()
@@ -421,7 +421,7 @@ async def process_bank_statement(user_id: str = Form(...), file: UploadFile = Fi
         print(f"❌ Unexpected error in process_bank_statement: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@app.post("/api/v1/get-transaction-summary")
+@app.post("/okanassist/v1/get-transaction-summary")
 async def get_transaction_summary(request: SummaryRequest):
     """Get transaction summary - REQUIRES AUTHENTICATION"""
     await initialize_services()
@@ -440,8 +440,10 @@ async def get_transaction_summary(request: SummaryRequest):
     except Exception as e:
         print(f"❌ Unexpected error in get_transaction_summary: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
 ### Reminders Endpoints
-@app.post("/api/v1/get-reminders")
+@app.post("/okanassist/v1/get-reminders")
 async def get_reminders(user_id: str, limit: int = 10):
     """Get user reminders - REQUIRES AUTHENTICATION"""
     await initialize_services()
@@ -462,7 +464,7 @@ async def get_reminders(user_id: str, limit: int = 10):
         raise HTTPException(status_code=500, detail="Internal server error")
 
 ## server function to receive batch of reminders and send notifications
-@app.post("/api/v1/batch-notify-reminders")
+@app.post("/okanassist/v1/batch-notify-reminders")
 async def batch_notify_reminders(request: Request):
     """Receive batch of reminders and send notifications."""
     try:
@@ -511,7 +513,7 @@ async def batch_notify_reminders(request: Request):
         return {"success": False, "error": str(e)}
 
 ##### User Management Endpoints
-@app.post("/api/v1/register")
+@app.post("/okanassist/v1/register")
 async def register_user(request: RegisterRequest):
     """Register new user using Supabase Auth"""
     await initialize_services()
@@ -611,7 +613,7 @@ async def register_user(request: RegisterRequest):
         print(f"❌ Registration error API register_user: error aqui {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/v1/profile")
+@app.get("/okanassist/v1/profile")
 async def get_profile(user_id: str):
     """Get user profile - REQUIRES AUTHENTICATION"""
     await initialize_services()
@@ -631,7 +633,7 @@ async def get_profile(user_id: str):
         print(f"❌ Unexpected error in get_profile: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@app.get("/api/v1/health")
+@app.get("/okanassist/v1/health")
 async def health_check():
     """Health check endpoint"""
     await initialize_services()
