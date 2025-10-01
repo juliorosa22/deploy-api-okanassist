@@ -803,7 +803,7 @@ class Database:
             print(f"✅ Created payment record {payment_id} for user {user_id}")
             return payment_id
 
-    async def update_payment_status(self, payment_id: str, status: str, transaction_id: str = None, subscription_id: str = None):
+    async def update_payment_status(self, payment_id: str, status: str, transaction_id: str = None, subscription_id: str = None, amount = None, currency = None):
         """Update payment status and related fields"""
         async with self.pool.acquire() as conn:
             # Update payment record
@@ -812,11 +812,13 @@ class Database:
                 SET status = $2, 
                     transaction_id = $3,
                     subscription_id = $4,
+                    amount = $5,
+                    currency = $6,
                     updated_at = NOW()
                 WHERE id = $1
                 RETURNING user_id, amount, currency, valid_until
-            """, payment_id, status, transaction_id, subscription_id)
-            
+            """, payment_id, status, transaction_id, subscription_id, amount, currency)
+
             if not result:
                 raise ValueError(f"Payment {payment_id} not found")
             

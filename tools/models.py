@@ -296,11 +296,11 @@ class UserSettings:
 class Payment:
     """Payment model for subscription management"""
     user_id: str  # Supabase auth.users.id (UUID)
-    provider: str  # 'paypal' or 'mercadopago'
+    provider: str  # 'paypal', 'mercadopago' or 'stripe'
     amount: Decimal
     currency: str
     status: str  # 'pending', 'success', 'failed', 'cancelled'
-    transaction_id: Optional[str] = None  # External payment provider transaction ID
+    transaction_id: Optional[str] = None  # External payment provider transaction ID, for stripe is customer id
     subscription_id: Optional[str] = None  # Provider subscription ID
     valid_until: Optional[datetime] = None
     id: Optional[str] = None  # UUID primary key

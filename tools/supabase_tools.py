@@ -200,20 +200,20 @@ class SupabaseClient:
             return False
 
     # Payment-related methods
-    async def create_payment_record(self, user_id: str, provider: str = "paypal", amount: float = 9.99, currency: str = "USD") -> str:
+    async def create_payment_record(self, user_id: str, provider: str = "paypal", amount: float = 4.99, currency: str = "USD") -> str:
         """Create a payment record and return payment ID"""
         if not self.connected:
             await self.connect()
         
         return await self.database.create_payment(user_id, provider, amount, currency)
 
-    async def process_payment_success(self, payment_id: str, transaction_id: str, subscription_id: str = None):
+    async def process_payment_success(self, payment_id: str, transaction_id: str, subscription_id: str = None, amount: float = None, currency: str = None):
         """Process successful payment and update user premium status"""
         if not self.connected:
             await self.connect()
         
         # Update payment status
-        await self.database.update_payment_status(payment_id, "success", transaction_id, subscription_id)
+        await self.database.update_payment_status(payment_id, "success", transaction_id, subscription_id, amount, currency)
         print(f"✅ Payment {payment_id} processed successfully")
 
     async def update_user_premium_status(self, telegram_id: str, is_premium: bool, premium_days: int = 30):
@@ -337,13 +337,28 @@ class SupabaseClient:
         print(f"Webhook event type: {event['type']}")
 
         # Handle critical events
-        if event['type'] == 'checkout.session.completed':    
+        if event['type'] == 'checkout.session.completed' or event['type'] == 'invoice.paid' or event['type'] == 'payment_intent.succeeded':    
             if not payment_id:
                 result["message"] = "❌ Webhook received without a client_reference_id (payment_id)."
                 return result
             print(f"✅ checkout.session.completed for payment_id: {payment_id}")
+            
+            amount_paid = None
+            currency = None
+            if event['type'] == 'checkout.session.completed':
+                amount_paid = event_data.get('amount_total')  # In cents/smallest unit
+                currency = event_data.get('currency')
+            elif event['type'] == 'invoice.paid':
+                amount_paid = event_data.get('amount_paid')
+                currency = event_data.get('currency')
+            elif event['type'] == 'payment_intent.succeeded':
+                amount_paid = event_data.get('amount')
+                currency = event_data.get('currency')
+                
+            
+            
             # Update our database
-            await self.process_payment_success(payment_id, customer_id, subscription_id) #update the paymment record data
+            await self.process_payment_success(payment_id, customer_id, subscription_id,amount_paid, currency) #update the paymment record data
             await self.update_user_premium_status(telegram_id, True, premium_days=30) # update user premium status and premium_until
  
             if customer_id and telegram_id:
@@ -382,7 +397,7 @@ class SupabaseClient:
                 #await self.send_telegram_message(telegram_id, "❌ Your subscription has been canceled. You can resubscribe anytime via /upgrade.")
             
         # Handle invoice.payment_failed (payment failures)
-        elif event['type'] == 'invoice.payment_failed':
+        elif event['type'] == 'invoice.payment_failed' or event['type'] == 'payment_intent.payment_failed':
             await self.process_payment_failure(payment_id, "payment_failed")
             if telegram_id:
                 if customer_id:
