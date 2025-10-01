@@ -178,7 +178,7 @@ async def handle_upgrade(request: UpgradeRequest):
     except Exception as e:
         print(f"❌ Error in handle_upgrade: {e}")
         raise HTTPException(status_code=500, detail="An internal error occurred while processing your upgrade request.")
-
+###
 ##TODO improve the webhook to handle refunds and cancellations
 @app.post("/okanassist/v1/webhooks/stripe")
 async def handle_stripe_webhook(request: Request):
