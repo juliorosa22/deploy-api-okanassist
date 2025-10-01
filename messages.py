@@ -106,7 +106,7 @@ Just talk to me naturally - I understand! 🎉
         "insufficient_credits": "🚀 You've reached your credit limit. To continue, please /upgrade for unlimited access.",
         "session_expired": "⏰ Your session has expired. Please log in again with /start.",
         "generic_error": "❌ Something went wrong. Please try again or contact support.",
-        "upgrade_to_premium": "🚀 *Upgrade to Premium!*\n\nClick the link below to unlock unlimited AI features.\n\n[Upgrade Now]({stripe_url})",
+        "upgrade_to_premium": "🚀 *Upgrade to Premium!*\n\nClick the link below to unlock unlimited AI features: \r [Upgrade Now]({stripe_url})\n $$$",
         "already_premium": "✅ You are already a premium user! Enjoy unlimited access to all features.",
 
     },
@@ -166,7 +166,7 @@ Just talk to me naturally - I understand! 🎉
         "insufficient_credits": "🚀 Has alcanzado tu límite de créditos. Para continuar, por favor usa /upgrade para acceso ilimitado.",
         "session_expired": "⏰ Tu sesión ha expirado. Por favor, inicia sesión de nuevo con /start.",
         "generic_error": "❌ Algo salió mal. Por favor, inténtalo de nuevo o contacta a soporte.",
-        "upgrade_to_premium": "🚀 ¡*Actualiza a Premium!*\n\nHaz clic en el enlace para desbloquear funciones ilimitadas de IA.\n\n[Actualizar ahora]({stripe_url})",
+        "upgrade_to_premium": "🚀 ¡*Actualiza a Premium!*\n\nHaz clic en el enlace para desbloquear funciones ilimitadas de IA: \r[Actualizar ahora]({stripe_url})\n #####",
         "transaction_created": ("{emoji} *¡Transacción registrada!*\n\n"
                 "📝 *Descripción:* {description}\n"
                 "💵 *Monto:* ${amount:.2f}\n"
@@ -238,7 +238,7 @@ Just talk to me naturally - I understand! 🎉
         "insufficient_credits": "🚀 Você atingiu seu limite de créditos. Para continuar, por favor, use /upgrade para acesso ilimitado.",
         "session_expired": "⏰ Sua sessão expirou. Por favor, faça login novamente com /start.",
         "generic_error": "❌ Algo deu errado. Por favor, tente novamente ou entre em contato com o suporte.",
-        "upgrade_to_premium": "🚀 *Faça o Upgrade para Premium!*\n\nClique no link abaixo para desbloquear recursos ilimitados de IA.\n\n[Fazer Upgrade Agora]({stripe_url})",
+        "upgrade_to_premium": "🚀 *Faça o Upgrade para Premium!*\n\nClique no link abaixo para desbloquear recursos ilimitados de IA: \r[Fazer Upgrade Agora]({stripe_url})\n\n $$$",
         "already_premium": "✅ Você já é um usuário premium! Aproveite o acesso ilimitado a todos os recursos.",
         
     }

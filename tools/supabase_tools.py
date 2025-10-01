@@ -216,21 +216,30 @@ class SupabaseClient:
         await self.database.update_payment_status(payment_id, "success", transaction_id, subscription_id, amount, currency)
         print(f"✅ Payment {payment_id} processed successfully")
 
-    async def update_user_premium_status(self, telegram_id: str, is_premium: bool, premium_days: int = 30):
+    async def update_user_premium_status(self, telegram_id: str, is_premium: bool, premium_days: int = 30, extend: bool = False):
         """Update user's premium status"""
         if not self.connected:
             await self.connect()
         
         async with self.database.pool.acquire() as conn:
             if is_premium:
-                # Set premium_until to now + premium_days
-                new_premium_until = datetime.now() + timedelta(days=premium_days)
-                await conn.execute("""
-                    UPDATE user_settings 
-                    SET is_premium = TRUE, premium_until = $1, updated_at = NOW()
-                    WHERE telegram_id = $2
-                """, new_premium_until, telegram_id)
-                print(f"✅ User {telegram_id} upgraded to premium until {new_premium_until}")
+                if extend:
+                    # Extend existing premium_until by premium_days
+                    await conn.execute("""
+                        UPDATE user_settings 
+                        SET premium_until = COALESCE(premium_until, NOW()) + INTERVAL '%s days', updated_at = NOW()
+                        WHERE telegram_id = $1 AND is_premium = TRUE
+                    """, premium_days, telegram_id)
+                    print(f"✅ Extended premium for user {telegram_id} by {premium_days} days")
+                else:
+                    # Set new premium_until to now + premium_days (for initial subscriptions)
+                    new_premium_until = datetime.now() + timedelta(days=premium_days)
+                    await conn.execute("""
+                        UPDATE user_settings 
+                        SET is_premium = TRUE, premium_until = $1, updated_at = NOW()
+                        WHERE telegram_id = $2
+                    """, new_premium_until, telegram_id)
+                    print(f"✅ Set premium for user {telegram_id} until {new_premium_until}")
             else:
                 # Revoke premium
                 await conn.execute("""
@@ -238,7 +247,7 @@ class SupabaseClient:
                     SET is_premium = FALSE, premium_until = NULL, updated_at = NOW()
                     WHERE telegram_id = $1
                 """, telegram_id)
-                print(f"✅ User {telegram_id} premium revoked")
+                print(f"✅ Premium revoked for user {telegram_id}")
 
     async def process_payment_failure(self, payment_id: str, reason: str = "failed"):
         """Process failed payment"""
@@ -313,6 +322,20 @@ class SupabaseClient:
             event = stripe.Webhook.construct_event(
                 payload=payload, sig_header=sig_header, secret=webhook_secret
             )
+            
+            event_data = event['data']['object']
+        
+            event_info = {
+                "event_type": event['type'],
+                "payment_id": event_data.get('client_reference_id',None),
+                "subscription_id": event_data.get('subscription',None),
+                "customer_id": event_data.get('customer',None),
+                "amount": event_data.get('amount_total') or event_data.get('amount_paid') or event_data.get('amount') or None,
+                "currency": event_data.get('currency',None),
+                "metadata": event_data.get('metadata', {})
+            }
+            #print("Stripe webhook event info:", event_info)
+            # Debug print
         except ValueError as e:
             result["message"] = f"❌ Invalid webhook payload: {e}"
             return result
@@ -322,41 +345,24 @@ class SupabaseClient:
 
         # Extract common fields (may not be present for all events)
         event_data = event['data']['object']
-        payment_id = event_data.get('client_reference_id')
-        subscription_id = event_data.get('subscription')
-        customer_id = event_data.get('customer')
-        telegram_id = event_data.get('metadata', {}).get('telegram_id') if hasattr(event_data, 'get') and 'metadata' in event_data else None
-        
-        if telegram_id:
-            result["telegram_id"] = telegram_id
-        elif customer_id:
+        payment_id = event_info.get('payment_id')
+        subscription_id = event_info.get('subscription_id')
+        customer_id = event_info.get('customer_id')
+        telegram_id = event_info.get('metadata', {}).get('telegram_id')
+        currency = event_info.get('currency')
+        amount_paid = event_info.get('amount')  # Centesimal amount in cents
+
+        #try to get telegram_id from customer_id if not present in metadata in order to send message to user when subscription expires or payment fails
+        if telegram_id is None and customer_id:
             telegram_id = await self.get_telegram_id_from_customer(customer_id)
-            if telegram_id:
-                result["telegram_id"] = telegram_id
+        result["telegram_id"] = telegram_id
 
-        print(f"Webhook event type: {event['type']}")
-
-        # Handle critical events
-        if event['type'] == 'checkout.session.completed' or event['type'] == 'invoice.paid' or event['type'] == 'payment_intent.succeeded':    
-            if not payment_id:
+        # User first time subscription completed
+        if event['type'] == 'checkout.session.completed': #or event['type'] == 'invoice.paid' or event['type'] == 'payment_intent.succeeded':    
+            if not payment_id :
                 result["message"] = "❌ Webhook received without a client_reference_id (payment_id)."
                 return result
-            print(f"✅ checkout.session.completed for payment_id: {payment_id}")
-            
-            amount_paid = None
-            currency = None
-            if event['type'] == 'checkout.session.completed':
-                amount_paid = event_data.get('amount_total')  # In cents/smallest unit
-                currency = event_data.get('currency')
-            elif event['type'] == 'invoice.paid':
-                amount_paid = event_data.get('amount_paid')
-                currency = event_data.get('currency')
-            elif event['type'] == 'payment_intent.succeeded':
-                amount_paid = event_data.get('amount')
-                currency = event_data.get('currency')
-                
-            
-            
+            #print(f"✅ checkout.session.completed for payment_id: {payment_id}")
             # Update our database
             await self.process_payment_success(payment_id, customer_id, subscription_id,amount_paid, currency) #update the paymment record data
             await self.update_user_premium_status(telegram_id, True, premium_days=30) # update user premium status and premium_until
@@ -369,11 +375,33 @@ class SupabaseClient:
                 portal_url = portal_session.url
                 # Send Telegram message with portal link
                 result["success"] = True
-                result["message"] = f"🎉 Subscription activated! Manage your account here:\n {portal_url}"
+                result["message"] = f"🎉 Subscription activated! Manage your account here:\r {portal_url} ****\n"
                 
             # Return both success and telegram_id
-        
+
+        # handles subscription renewals    
+        elif event['type'] == 'invoice.paid':
+            if customer_id and telegram_id:
+                if subscription_id:
+                    print(f"✅ Subscription renewal for customer {customer_id}")
+                    # Extract and log amount/currency
+                    amount_paid = event_data.get('amount_paid')
+                    currency = event_data.get('currency')
+                    if amount_paid and currency:
+                        amount_readable = amount_paid / 100  # Convert cents to dollars
+                        print(f"💰 Renewal amount: {amount_readable} {currency.upper()}")
+                    # Extend premium instead of resetting
+                    await self.update_user_premium_status(telegram_id, True, premium_days=30, extend=True)
+                    result["success"] = True
+                    result["message"] = "🎉 Subscription renewed successfully!"
+                else:
+                    print(f"ℹ️ Invoice paid for customer {customer_id} - acknowledging")
+                    result["success"] = True
+            else:
+                print(f"⚠️ Invoice paid but no customer/telegram_id - acknowledging")
+                result["success"] = True        
         #user canceled subscription event
+       
         elif event['type'] == 'customer.subscription.updated':
             if telegram_id and event_data.get('cancel_at_period_end'):
                 # Subscription is set to cancel at period end
@@ -390,29 +418,25 @@ class SupabaseClient:
             if telegram_id:
                 # Revoke premium in DB
                 await self.update_user_premium_status(telegram_id, False)
-                # Notify user
                 result["success"] = True
-                #result["telegram_id"] = telegram_id
                 result["message"] = "❌ Your subscription has been canceled. You can resubscribe anytime via /upgrade."
-                #await self.send_telegram_message(telegram_id, "❌ Your subscription has been canceled. You can resubscribe anytime via /upgrade.")
-            
+                          
         # Handle invoice.payment_failed (payment failures)
         elif event['type'] == 'invoice.payment_failed' or event['type'] == 'payment_intent.payment_failed':
             await self.process_payment_failure(payment_id, "payment_failed")
-            if telegram_id:
-                if customer_id:
-                    portal_session = stripe.billing_portal.Session.create(
-                        customer=customer_id,
-                        return_url=f"https://t.me/{os.getenv('TELEGRAM_BOT_USERNAME')}?start=portal_return"
-                    )
-                    portal_url = portal_session.url
-                    result["success"] = True
-                    result["message"] = f"⚠️ Payment failed. Update your payment method here: {portal_url}"
-                else:
-                    result["success"] = True
-                    result["message"] = f"⚠️ Payment failed. Please contact support to update your payment method."
-                #
-                #await self.send_telegram_message(telegram_id, f"⚠️ Payment failed. Update your payment method here: {portal_url}")
+            if customer_id:
+                portal_session = stripe.billing_portal.Session.create(
+                    customer=customer_id,
+                    return_url=f"https://t.me/{os.getenv('TELEGRAM_BOT_USERNAME')}?start=portal_return"
+                )
+                portal_url = portal_session.url
+                result["success"] = True
+                result["message"] = f"⚠️ Payment failed. Update your payment method here: {portal_url}"
+            else:
+                result["success"] = True
+                result["message"] = f"⚠️ Payment failed. Please contact support to update your payment method."
+                
+                
 
     # Handle charge.dispute.created (refunds/disputes - optional)
         elif event['type'] == 'charge.dispute.created':
