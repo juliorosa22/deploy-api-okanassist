@@ -453,9 +453,9 @@ async def get_reminders(user_id: str, limit: int = 10):
         
         # Step 1: Get user data using centralized helper
         user_data = await get_user_data(AuthCheckRequest(telegram_id=user_id))
-        supabase_id = user_data.get('user_id', None)
+        
         # Step 2: Process the reminders (no credits needed)
-        result = await reminder_agent.get_reminders(supabase_id, limit)
+        result = await reminder_agent.get_reminders(user_data)
         return {"success": True, "message": result}
     except HTTPException:
         raise

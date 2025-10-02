@@ -164,9 +164,13 @@ class ReminderAgent:
             print(f"❌ Error processing reminder message: {e}")
             return get_message("reminder_creation_failed", language)
 
-    async def get_reminders(self, user_id: str, language: str, user_timezone: str, limit: int = 10) -> str:
+    async def get_reminders(self, user_data: dict, limit: int = 10) -> str:
         """Get user's pending reminders, formatted for their language and timezone."""
         try:
+            user_id = user_data.get('user_id')
+            language = user_data.get('language', 'en')
+            user_timezone = user_data.get('timezone', 'UTC')
+
             reminders = await self.supabase_client.database.get_user_reminders(
                 user_id, include_completed=False, limit=limit
             )
@@ -192,19 +196,58 @@ class ReminderAgent:
             
             format_prompts = {
                 "en": f"""
-                The user's current time is {user_now_iso}. Format this list of reminders:
-                {json.dumps(reminders_data)}
-                Use emojis, show relative dates (today, tomorrow, etc.), and organize by priority.
+                The user's current time is {user_now_iso}. Format this list of reminders into a clean, readable message for Telegram. Do NOT output JSON—return plain text with emojis, line breaks, and Markdown formatting (e.g., bold for sections).
+
+                Group reminders by priority: Urgent first, then High, Medium, Low. For each group, list reminders as bullet points like: "- [Emoji] Title (due [relative date]) - Type"
+
+                Use these emojis:
+                - Priority: 🔥 Urgent, ❗ High, 📌 Medium, 📝 Low
+                - Type: 🕐 Task, 📅 Event, ⏰ Deadline, 🔄 Habit, 📝 General
+
+                Example output:
+                🔥 Urgent Reminders:
+                - 📅 Call Mom (due today at 3:00 PM) - Habit
+
+                ❗ High Priority:
+                - ⏰ Pay Rent (due tomorrow) - Deadline
+
+                Reminders data: {json.dumps(reminders_data)}
                 """,
                 "es": f"""
-                La hora actual del usuario es {user_now_iso}. Formatea esta lista de recordatorios:
-                {json.dumps(reminders_data)}
-                Usa emojis, muestra fechas relativas (hoy, mañana, etc.) y organiza por prioridad.
+                La hora actual del usuario es {user_now_iso}. Formatea esta lista de recordatorios en un mensaje limpio y legible para Telegram. NO salidas JSON—devuelve texto plano con emojis, saltos de línea y formato Markdown (ej. negrita para secciones).
+
+                Agrupa los recordatorios por prioridad: Urgente primero, luego Alta, Media, Baja. Para cada grupo, lista los recordatorios como viñetas como: "- [Emoji] Título (vencimiento [fecha relativa]) - Tipo"
+
+                Usa estos emojis:
+                - Prioridad: 🔥 Urgente, ❗ Alta, 📌 Media, 📝 Baja
+                - Tipo: 🕐 Tarea, 📅 Evento, ⏰ Fecha límite, 🔄 Hábito, 📝 General
+
+                Ejemplo de salida:
+                🔥 Recordatorios Urgentes:
+                - 📅 Llamar a Mamá (vencimiento hoy a las 3:00 PM) - Hábito
+
+                ❗ Prioridad Alta:
+                - ⏰ Pagar Renta (vencimiento mañana) - Fecha límite
+
+                Datos de recordatorios: {json.dumps(reminders_data)}
                 """,
                 "pt": f"""
-                A hora atual do usuário é {user_now_iso}. Formate esta lista de lembretes:
-                {json.dumps(reminders_data)}
-                Use emojis, mostre datas relativas (hoje, amanhã, etc.) e organize por prioridade.
+                A hora atual do usuário é {user_now_iso}. Formate esta lista de lembretes em uma mensagem limpa e legível para Telegram. NÃO saia JSON—retorne texto plano com emojis, quebras de linha e formatação Markdown (ex. negrito para seções).
+
+                Agrupe os lembretes por prioridade: Urgente primeiro, depois Alta, Média, Baixa. Para cada grupo, liste os lembretes como marcadores como: "- [Emoji] Título (vencimento [data relativa]) - Tipo"
+
+                Use estes emojis:
+                - Prioridade: 🔥 Urgente, ❗ Alta, 📌 Média, 📝 Baixa
+                - Tipo: 🕐 Tarefa, 📅 Evento, ⏰ Prazo, 🔄 Hábito, 📝 Geral
+
+                Exemplo de saída:
+                🔥 Lembretes Urgentes:
+                - 📅 Ligar para Mamãe (vencimento hoje às 3:00 PM) - Hábito
+
+                ❗ Prioridade Alta:
+                - ⏰ Pagar Aluguel (vencimento amanhã) - Prazo
+
+                Dados de lembretes: {json.dumps(reminders_data)}
                 """
             }
             
