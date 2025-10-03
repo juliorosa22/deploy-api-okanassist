@@ -530,20 +530,28 @@ class Database:
             transaction.created_at = result['created_at']
             return transaction
 
-    async def get_user_transactions(self, user_id: str, days: int = 30, 
-                          transaction_type: str = None) -> List[Transaction]:
-        """Get user transactions for the specified period"""
+    async def get_user_transactions(self, user_id: str, 
+                                  start_date: Optional[datetime] = None, 
+                                  end_date: Optional[datetime] = None,
+                                  transaction_type: Optional[str] = None) -> List[Transaction]:
+        """Get user transactions for a specified period with optional type filter."""
         async with self.pool.acquire() as conn:
-            where_clause = "WHERE user_id = $1 AND date >= $2"
-            params = [user_id, datetime.now() - timedelta(days=days)]
+            # Default to last 30 days if no dates are provided
+            if not start_date:
+                start_date = datetime.now() - timedelta(days=30)
+            if not end_date:
+                end_date = datetime.now()
+
+            params = [user_id, start_date, end_date]
+            where_clauses = ["user_id = $1", "date >= $2", "date <= $3"]
             
             if transaction_type:
-                where_clause += " AND transaction_type = $3"
                 params.append(transaction_type)
+                where_clauses.append(f"transaction_type = ${len(params)}")
             
             query = f"""
                 SELECT * FROM transactions 
-                {where_clause}
+                WHERE {" AND ".join(where_clauses)}
                 ORDER BY date DESC
             """
             
@@ -551,11 +559,19 @@ class Database:
             
             return [self._row_to_transaction(row) for row in rows]
 
-    async def get_transaction_summary(self, user_id: str, days: int = 30) -> TransactionSummary:
-        """Get transaction summary for the specified period"""
+    async def get_transaction_summary(self, user_id: str, 
+                                    start_date: Optional[datetime] = None, 
+                                    end_date: Optional[datetime] = None) -> TransactionSummary:
+        """Get transaction summary for a specified period."""
         async with self.pool.acquire() as conn:
-            start_date = datetime.now() - timedelta(days=days)
+            # Default to last 30 days if no dates are provided
+            if not start_date:
+                start_date = datetime.now() - timedelta(days=30)
+            if not end_date:
+                end_date = datetime.now()
             
+            period_days = (end_date - start_date).days
+
             # Get summary data
             summary_row = await conn.fetchrow("""
                 SELECT 
@@ -565,18 +581,18 @@ class Database:
                     COUNT(CASE WHEN transaction_type = 'expense' THEN 1 END) as expense_count,
                     COUNT(*) as total_transactions
                 FROM transactions 
-                WHERE user_id = $1 AND date >= $2
-            """, user_id, start_date)
+                WHERE user_id = $1 AND date >= $2 AND date <= $3
+            """, user_id, start_date, end_date)
             
             # Get expense categories
             category_rows = await conn.fetch("""
                 SELECT category, SUM(amount) as total
                 FROM transactions 
-                WHERE user_id = $1 AND date >= $2 AND transaction_type = 'expense'
+                WHERE user_id = $1 AND date >= $2 AND date <= $3 AND transaction_type = 'expense'
                 GROUP BY category
                 ORDER BY total DESC
                 LIMIT 5
-            """, user_id, start_date)
+            """, user_id, start_date, end_date)
             
             expense_categories = [
                 {"category": row['category'], "total": float(row['total'])}
@@ -585,7 +601,7 @@ class Database:
             
             return TransactionSummary(
                 user_id=user_id,
-                period_days=days,
+                period_days=period_days,
                 total_income=float(summary_row['total_income']),
                 total_expenses=float(summary_row['total_expenses']),
                 income_count=summary_row['income_count'],
@@ -622,20 +638,34 @@ class Database:
             return reminder
 
     async def get_user_reminders(self, user_id: str, include_completed: bool = False, 
-                       limit: int = 10) -> List[Reminder]:
-        """Get user reminders"""
+                       limit: int = 10, priority: Optional[str] = None, 
+                       start_date: Optional[datetime] = None, 
+                       end_date: Optional[datetime] = None) -> List[Reminder]:
+        """Get user reminders with optional filtering by priority and date range."""
         async with self.pool.acquire() as conn:
-            where_clause = "WHERE user_id = $1"
+            where_clauses = ["user_id = $1"]
             params = [user_id]
             
             if not include_completed:
-                where_clause += " AND is_completed = FALSE"
+                where_clauses.append("is_completed = FALSE")
+            
+            if priority:
+                params.append(priority)
+                where_clauses.append(f"priority = ${len(params)}")
+
+            if start_date:
+                params.append(start_date)
+                where_clauses.append(f"due_datetime >= ${len(params)}")
+
+            if end_date:
+                params.append(end_date)
+                where_clauses.append(f"due_datetime < ${len(params)}")
             
             query = f"""
                 SELECT * FROM reminders 
-                {where_clause}
+                WHERE {" AND ".join(where_clauses)}
                 ORDER BY due_datetime ASC NULLS LAST, created_at DESC
-                LIMIT $2
+                LIMIT ${len(params) + 1}
             """
             params.append(limit)
             

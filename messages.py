@@ -62,6 +62,7 @@ MESSAGES = {
         "no_pending_reminders": "👍 You have no pending reminders. Great job!",
         "pending_reminders_header": "🗓️ *Here are your upcoming reminders:*",
         "reminder_fetch_failed": "❌ Sorry, I couldn't fetch your reminders right now.",
+        "report_sent": "📩 *Transaction report sent!*\n\nCheck your email for the PDF summary of your transactions.",
 
          "help_message": """
 🤖 *OkanAssist Bot*
@@ -159,6 +160,8 @@ Just talk to me naturally - I understand! 🎉
         "no_pending_reminders": "👍 No tienes recordatorios pendientes. ¡Buen trabajo!",
         "pending_reminders_header": "🗓️ *Aquí están tus próximos recordatorios:*",
         "reminder_fetch_failed": "❌ Lo siento, no pude obtener tus recordatorios en este momento.",
+        "report_sent": "📩 *¡Informe de transacciones enviado!*\n\nRevisa tu email para ver el resumen PDF de tus transacciones.",
+
 
         "help_message": "🤖 *Ayuda de OkanAssist*\n\n*💰 Gastos:* 'Gasté $25 en el almuerzo'\n*⏰ Recordatorios:* 'Recuérdame pagar las facturas mañana'\n*📊 Resumen:* /balance\n\n¡Solo háblame con naturalidad!",
         "credit_warning": "\n\n💳 **Créditos restantes: {credits_remaining}**",
@@ -240,6 +243,7 @@ Just talk to me naturally - I understand! 🎉
         "generic_error": "❌ Algo deu errado. Por favor, tente novamente ou entre em contato com o suporte.",
         "upgrade_to_premium": "🚀 *Faça o Upgrade para Premium!*\n\nClique no link abaixo para desbloquear recursos ilimitados de IA: \r[Fazer Upgrade Agora]({stripe_url})\n\n $$$",
         "already_premium": "✅ Você já é um usuário premium! Aproveite o acesso ilimitado a todos os recursos.",
+        "report_sent": "📩 *Relatório de transações enviado!*",
         
     }
 }

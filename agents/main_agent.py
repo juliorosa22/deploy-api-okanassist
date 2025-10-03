@@ -19,22 +19,15 @@ class MainAgent:
             name="MainAssistant",
             model=Groq(id="llama-3.3-70b-versatile", temperature=0.2),
             instructions="""
-            You are the main coordinator for a personal tracking assistant.
+            You are the OkanAssist main agent coordinator. Your role is to classify a user's message into a high-level category.
 
-            Your role is to:
-            1. Identify user intentions from messages in multiple languages.
-            2. Route the user's request to the correct internal function.
-            3. Provide friendly, helpful responses if no specific function is needed.
-            
             Classify user messages into ONE of these categories:
-            - TRANSACTION: For logging a new expense or income (e.g., "spent $20 on lunch", "got paid $500").
-            - REMINDER: For creating a new reminder, task, or event (e.g., "remind me to call mom tomorrow").
-            - TRANSACTION_SUMMARY: For requests about financial summaries, balances, spending reports (e.g., "what's my balance?", "show me my expenses this month").
-            - REMINDER_SUMMARY: For requests about schedules, agendas, or lists of upcoming tasks/reminders (e.g., "what's my schedule?", "show me my reminders").
+            - TRANSACTION: For anything related to money, expenses, income, summaries, or financial reports. (e.g., "spent $20", "show my spending", "I need a PDF report for this month").
+            - REMINDER: For anything related to creating reminders, tasks, events, or asking for a schedule. (e.g., "remind me to call mom", "what's on my agenda today?").
             - HELP: For help requests or questions about functionality.
             - GREETING: For simple greetings and casual conversation.
             
-            Respond with ONLY the classification category in uppercase (e.g., "TRANSACTION", "REMINDER_SUMMARY").
+            Respond with ONLY the classification category in uppercase (e.g., "TRANSACTION", "REMINDER").
             """
         )
         # Add Gemini agent for audio transcription
@@ -42,7 +35,8 @@ class MainAgent:
             name="AudioTranscriber",
             model=Gemini(id="gemini-2.0-flash"),
             instructions="""
-            You are an assistant that receives user audio input in any language.
+            You are the OkanAssist speech to text main agent. Your role is to:
+            process user audio input in any language and transcribe it to English text.
 
             1. Identify the user's spoken language from the audio.
             2. Transcribe the audio to English text only.
@@ -50,15 +44,21 @@ class MainAgent:
 
             Example output:
             "Pay rent tomorrow at 10am."
+            "Schedule a meeting with John next Monday."
+            "I spent $15 on groceries."
+            "What's my balance?"
+            4. If the audio is unclear or cannot be transcribed, respond with:
+            "I'm sorry, I couldn't understand the audio. Please try again."
             """
         )
-    
-    async def route_message(self, user_id: str, message: str, user_data: Dict[str, Any]) -> str:
+
+    async def route_message(self, user_data: Dict[str, Any], message: str) -> str:
         """Route user message to appropriate agent based on intent - NO AUTH CHECK"""
         lang_map = {'es': 'Spanish', 'pt': 'Portuguese', 'en': 'English'}
         lang = user_data.get('language', 'en')
         lang_name = lang_map.get(lang.split('-')[0], 'English')
         user_timezone = user_data.get('timezone', 'UTC')
+        user_id = user_data.get('id')
         try:
             # User is already authenticated at this point (checked in API layer)
            
@@ -74,24 +74,13 @@ class MainAgent:
             if self._contains_intent(intent_response, "TRANSACTION"):
                 from .transaction_agent import TransactionAgent
                 transaction_agent = TransactionAgent(self.supabase_client)
-                return await transaction_agent.process_message(user_id, message, lang)
+                return await transaction_agent.process_message(user_data, message)
                 
             elif self._contains_intent(intent_response, "REMINDER"):
                 from .reminder_agent import ReminderAgent
                 reminder_agent = ReminderAgent(self.supabase_client)
-                return await reminder_agent.process_message(user_id, message, lang, user_timezone)
+                return await reminder_agent.process_message(user_data, message)
 
-            # --- 2. Rename SUMMARY to TRANSACTION_SUMMARY ---
-            elif self._contains_intent(intent_response, "TRANSACTION_SUMMARY"):
-                from .transaction_agent import TransactionAgent
-                transaction_agent = TransactionAgent(self.supabase_client)
-                return await transaction_agent.get_summary(user_id, lang)
-
-            # --- 3. Add new route for REMINDER_SUMMARY ---
-            elif self._contains_intent(intent_response, "REMINDER_SUMMARY"):
-                from .reminder_agent import ReminderAgent
-                reminder_agent = ReminderAgent(self.supabase_client)
-                return await reminder_agent.get_reminders(user_id, lang, user_timezone)
                 
             elif self._contains_intent(intent_response, "HELP"):
                 # Return help content directly (no auth needed here)
@@ -106,7 +95,7 @@ class MainAgent:
                 - Always respond in the user's language ({lang_name}). If the language is unclear, default to English.
                 - When reasonable, add a fun, light-hearted tone with emojis or playful phrases to keep it enjoyable (e.g., for greetings or casual chats).
                 - Suggest how they can use OkanAssistant Bot features for tracking expenses and daily reminders.
-                - Also, encourage them to follow OkanFit on social media and visit https://www.okanfit.dev.br for more tips and updates.
+                - Also, encourage them to follow OkanFit on instagram: @okanfit.dev and visit https://www.okanfit.dev.br for more tips and updates.
                 - Keep responses concise and avoid long replies.
                 """
                 general_response_obj = await asyncio.to_thread(
@@ -121,12 +110,13 @@ class MainAgent:
             print(f"❌ Main Agent: Error routing message: {e}")
             return "❌ Sorry, I encountered an error. Please try rephrasing your request."
 
-    async def route_audio(self, user_id: str, audio_path: str, user_data: Dict[str, Any]) -> str:
+    async def route_audio(self, user_data: Dict[str, Any], audio_path: str) -> str:
         """Transcribe audio to English and route to the correct agent."""
         try:
             # Step 1: Transcribe audio to English using Gemini
             #audio_dict = {"filepath": audio_path}
             #print("Routing audio for transcription:", audio_dict)
+            user_id = user_data.get('user_id')
             print("Routing audio for transcription:", audio_path)
             response_obj = await asyncio.to_thread(
                 self.audio_agent.run,
@@ -137,7 +127,7 @@ class MainAgent:
             print("Transcribed audio (English):", transcript)
 
             # Step 2: Route the transcript as a message
-            return await self.route_message(user_id, transcript, user_data)
+            return await self.route_message(user_data, transcript)
 
         except Exception as e:
             print(f"❌ Main Agent: Error routing audio: {e}")

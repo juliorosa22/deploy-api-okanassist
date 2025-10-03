@@ -3,11 +3,11 @@ import re
 import json
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
-import asyncio  # <-- 1. IMPORT ASYNCIO
+import asyncio
 from agno.models.groq import Groq
-# Fix: Use package imports from __init__.py
 from tools import Transaction, TransactionType, SupabaseClient
-from messages import  MESSAGES, get_message
+from tools.pdf_generator import create_transaction_report_pdf # Import the new PDF generator
+from messages import get_message
 from agno.models.google import Gemini
 
 class TransactionAgent:
@@ -16,41 +16,41 @@ class TransactionAgent:
     def __init__(self, supabase_client: SupabaseClient):
         self.supabase_client = supabase_client
         
-        # Define simplified categories
         self.expense_categories = ["Essentials", "Food & Dining", "Transportation", "Shopping", "Entertainment", "Utilities", "Healthcare", "Travel", "Education", "Home"]
         self.income_categories = ["Salary", "Freelance", "Business", "Investment", "Gift", "Refund", "Rental", "Other Income"]
         
-        # Build category strings for agent instructions
         expense_cats = ", ".join(self.expense_categories)
         income_cats = ", ".join(self.income_categories)
         
-        # Initialize Groq agent for text processing (cost-effective)
         self.text_agent = Agent(
             name="TextTransactionProcessor",
-            model=Groq(id="llama-3.3-70b-versatile", temperature=0.1),  # Lower temp for stricter JSON
+            model=Groq(id="llama-3.3-70b-versatile", temperature=0.1),
             instructions=f"""
-                You are a precise financial data extractor. Your task is to analyze a user's message and extract transaction details into a strict JSON format.
+                You are a multilingual financial AI assistant. Your first task is to determine the user's intent from their message.
 
-                **Step-by-Step Thought Process:**
-                1.  **Identify Intent:** First, determine if the message describes an **expense** (money going out) or an **income** (money coming in).
-                    *   **Expense Keywords:** Look for words like 'spent', 'paid', 'bought', 'cost', 'charged', 'bill'. If no keywords are present, most transactions are expenses by default (e.g., "uber ride $25").
-                    *   **Income Keywords:** Look for words like 'earned', 'received', 'got paid', 'salary', 'bonus', 'refund', 'deposit'.
-                2.  **Select Category List:** Based on the intent, select the appropriate category list.
-                    *   **Expense Categories:** {expense_cats}
-                    *   **Income Categories:** {income_cats}
-                3.  **Extract Data:** Pull all required fields and strictly adhere to the output format.
+                **Step 1: Intent Detection**
+                Determine the user's intent. Possible intents are:
+                - `create_transaction`: The user wants to log a new expense or income. (e.g., "paid $50 for dinner", "got my $2000 salary")
+                - `get_summary`: The user wants a text summary of their finances. (e.g., "show my spending last week", "summary for this month")
+                - `generate_report`: The user wants a detailed PDF report. (e.g., "I need a report for the last 30 days", "generate pdf for january")
 
-                **Rules & Output Format:**
-                - Return ONLY a valid JSON object. No explanations or surrounding text.
-                - The `transaction_type` MUST be either "expense" or "income".
-                - The `category` MUST be one of the exact strings from the chosen list.
-                - If you are unsure of the category, use "Shopping" for expenses or "Other Income" for income.
-                - If no clear transaction is found, return `{{"transaction_found": false}}`.
+                **Step 2: Parameter Extraction**
+                - If intent is `create_transaction`, extract: `amount`, `description`, `transaction_type`, `category`, `merchant`.
+                - If intent is `get_summary` or `generate_report`, extract date filters: `start_date` and `end_date` in 'YYYY-MM-DD' format.
 
-                **Examples:**
-                - User: "just paid 20 bucks for my spotify sub" -> {{"amount": 20.00, "description": "Spotify subscription", "transaction_type": "expense", "category": "Entertainment", "merchant": "Spotify", "confidence": 0.95, "transaction_found": true}}
-                - User: "got a $50 refund from amazon" -> {{"amount": 50.00, "description": "Refund from Amazon", "transaction_type": "income", "category": "Refund", "merchant": "Amazon", "confidence": 0.9, "transaction_found": true}}
-                - User: "salary deposit $3000" -> {{"amount": 3000.00, "description": "Salary deposit", "transaction_type": "income", "category": "Salary", "merchant": null, "confidence": 1.0, "transaction_found": true}}
+                **Step 3: JSON Output**
+                You MUST return ONLY a valid JSON object.
+
+                **JSON Output Examples:**
+
+                *Create Transaction:*
+                `{{"intent": "create_transaction", "data": {{"amount": 50.00, "description": "Dinner", "transaction_type": "expense", "category": "Food & Dining"}}}}`
+
+                *Get Summary:*
+                `{{"intent": "get_summary", "filters": {{"start_date": "2025-09-01", "end_date": "2025-09-30"}}}}`
+
+                *Generate Report:*
+                `{{"intent": "generate_report", "filters": {{"start_date": "2025-01-01", "end_date": "2025-01-31"}}}}`
             """
         )
         
@@ -104,74 +104,122 @@ class TransactionAgent:
 )
 
     #TODO adapt to respond in user's language
-    async def process_message(self, user_id: str, message: str, lang: str) -> str:
-        """Process a text message for transaction data using Groq"""
+    async def process_message(self, user_data: Dict[str, Any], message: str) -> Dict[str, Any]:
+        """
+        Process a text message to determine user intent (create, summarize, or report)
+        and execute the corresponding action. Returns a dict with response type and content.
+        """
+        lang = user_data.get('language', 'en')
         
-        lang_map = {'es': 'Spanish', 'pt': 'Portuguese', 'en': 'English'}
-        lang_name = lang_map.get(lang.split('-')[0], 'English')
         try:
-            # The agent now has all instructions. Just pass the user's message.
             extraction_prompt = f"""
-             The user is speaking {lang_name}. Analyze the following user message and return the JSON output.
-            Respond in {lang_name} for the confirmation message.
+            The user's current date is {datetime.now().strftime('%Y-%m-%d')}.
+            Analyze the following user message and return the JSON output based on your instructions.
 
             **User Message:** "{message}"
-
-            **JSON Output:**
             """
             
             response_obj = await asyncio.to_thread(self.text_agent.run, extraction_prompt)
-            response = response_obj.content # <-- FIX: Access the .content attribute
-            #print("Raw response from Groq:", response)
-            # Enhanced JSON parsing for Groq responses
-            try:
-                # Clean response to extract JSON
-                json_start = response.find('{')
-                json_end = response.rfind('}') + 1
-                if json_start >= 0 and json_end > json_start:
-                    json_str = response[json_start:json_end]
-                    data = json.loads(json_str)
-                else:
-                    raise ValueError("No JSON found in response")
-            except:
-                # Fallback parsing if JSON isn't returned
-                data = self._fallback_parse(message)
+            response_str = response_obj.content
             
-            if not data.get("transaction_found", True):
-                return "🤔 I couldn't find transaction information in your message. Try something like 'Spent $25 on groceries' or 'Received $500 salary'."
-            
-            # Validate and fix category
-            validated_category = self._validate_category(data["category"], data["transaction_type"])
-            data["category"] = validated_category
-            #print("Extracted data:", data)
-            # Create and save transaction
-            transaction = Transaction(
-                user_id=user_id,
-                amount=abs(float(data["amount"])),
-                description=data["description"],
-                category=data["category"],
-                transaction_type=TransactionType(data["transaction_type"]),
-                original_message=message,
-                source_platform="telegram",
-                merchant=data.get("merchant"),
-                confidence_score=data.get("confidence", 0.85),
-                tags=[]
-            )
-            
-            # Save to database
-            saved_transaction = await self.supabase_client.database.save_transaction(transaction)
-            
-            # Generate response
-            emoji = "💸" if data["transaction_type"] == "expense" else "💰"
-            #TODO adapt to respond in user's language
+            json_match = re.search(r'\{.*\}', response_str, re.DOTALL)
+            if not json_match:
+                raise ValueError("No JSON object found in LLM response.")
+            parsed_response = json.loads(json_match.group())
+            intent = parsed_response.get("intent")
 
-            message_template = get_message("transaction_created", lang, emoji=emoji, description=data['description'], amount=data['amount'], category=data['category'], transaction_type=data['transaction_type'])
-            return message_template
-                
-            
+            if intent == "create_transaction":
+                return await self._handle_create_transaction(user_data, parsed_response.get("data", {}))
+            elif intent == "get_summary":
+                return await self._handle_get_summary(user_data, parsed_response.get("filters", {}))
+            elif intent == "generate_report":
+                return await self._handle_generate_report(user_data, parsed_response.get("filters", {}))
+            else:
+                return {"type": "text", "content": get_message("unclear_transaction_intent", lang)}
+
         except Exception as e:
-            print(f"❌ Transaction Agent: Error processing transaction message: {e}")
-            return "❌ Sorry, I couldn't process that transaction. Please try again with a clearer format."
+            print(f"❌ Transaction Agent: Error processing message: {e}")
+            return {"type": "text", "content": get_message("generic_error", lang)}
+
+    async def _handle_create_transaction(self, user_data: Dict[str, Any], data: Dict[str, Any]) -> Dict[str, Any]:
+        """Handles the logic for creating a new transaction."""
+        # This is the logic from your old process_message function
+        # ... (it saves the transaction and returns a confirmation message)
+        # The final return should be:
+        # return {"type": "text", "content": message_template}
+        user_id = user_data.get('user_id')
+        lang = user_data.get('language', 'en')
+
+        if not data.get("amount") or not data.get("description"):
+             return {"type": "text", "content": get_message("unclear_transaction_intent", lang)}
+
+        validated_category = self._validate_category(data["category"], data["transaction_type"])
+        
+        transaction = Transaction(
+            user_id=user_id,
+            amount=abs(float(data["amount"])),
+            description=data["description"],
+            category=validated_category,
+            transaction_type=TransactionType(data["transaction_type"]),
+            original_message="User message",
+            source_platform="telegram",
+            merchant=data.get("merchant"),
+            confidence_score=data.get("confidence", 0.9)
+        )
+        
+        await self.supabase_client.database.save_transaction(transaction)
+        
+        emoji = "💸" if data["transaction_type"] == "expense" else "💰"
+        message_template = get_message("transaction_created", lang, emoji=emoji, description=data['description'], amount=data['amount'], category=validated_category)
+        
+        return {"type": "text", "content": message_template}
+
+    async def _handle_get_summary(self, user_data: Dict[str, Any], filters: Dict[str, Any]) -> Dict[str, Any]:
+        """Handles fetching and formatting a transaction summary."""
+        user_id = user_data.get('user_id')
+        lang = user_data.get('language', 'en')
+        
+        start_date = datetime.fromisoformat(filters['start_date']) if filters.get('start_date') else None
+        end_date = datetime.fromisoformat(filters['end_date']) if filters.get('end_date') else None
+
+        summary = await self.supabase_client.database.get_transaction_summary(user_id, start_date, end_date)
+        
+        net_flow = summary.total_income - summary.total_expenses
+        flow_emoji = "📈" if net_flow >= 0 else "📉"
+        
+        message = f"{flow_emoji} *Financial Summary ({summary.period_days} days)*\n\n"
+        message += f"💰 *Income:* ${summary.total_income:,.2f}\n"
+        message += f"💸 *Expenses:* ${summary.total_expenses:,.2f}\n"
+        message += f"📊 *Net Flow:* ${net_flow:,.2f}\n\n"
+        
+        if summary.expense_categories:
+            message += "*Top Expense Categories:*\n"
+            for cat in summary.expense_categories:
+                message += f"• {cat['category']}: ${cat['total']:,.2f}\n"
+        
+        return {"type": "text", "content": message}
+
+    async def _handle_generate_report(self, user_data: Dict[str, Any], filters: Dict[str, Any]) -> Dict[str, Any]:
+        """Handles generating a PDF transaction report."""
+        user_id = user_data.get('user_id')
+        lang = user_data.get('language', 'en')
+        
+        start_date = datetime.fromisoformat(filters['start_date']) if filters.get('start_date') else datetime.now() - timedelta(days=30)
+        end_date = datetime.fromisoformat(filters['end_date']) if filters.get('end_date') else datetime.now()
+
+        transactions = await self.supabase_client.database.get_user_transactions(user_id, start_date, end_date)
+        
+        if not transactions:
+            return {"type": "text", "content": get_message("no_transactions_for_report", lang)}
+            
+        pdf_path = create_transaction_report_pdf(transactions, user_data.get('name', 'User'), start_date, end_date)
+        
+        # Return a special response type for the API to handle file sending
+        return {
+            "type": "file",
+            "content": pdf_path,
+            "caption": get_message("pdf_report_caption", lang, start_date=start_date.strftime('%Y-%m-%d'), end_date=end_date.strftime('%Y-%m-%d'))
+        }
 
     async def process_receipt_image(self, user_data: Dict[str, Any], image_path: str, lang: str = 'en') -> str:
         """Process receipt image using Gemini vision capabilities"""
@@ -397,8 +445,10 @@ class TransactionAgent:
             return "❌ Sorry, I couldn't process that bank statement. Please ensure it's a valid PDF with transaction data."
     
     #TODO adapt to respond in user's language
-    async def get_summary(self, user_id: str, days: int = 30, lang: str = 'en') -> str:
+    async def get_summary(self, user_data: Dict[str, Any], days: int = 30) -> str:
         """Generate financial summary using Groq for insights"""
+        user_id = user_data.get('user_id', None)
+        lang = user_data.get('language', 'en')
         try:
             # Get summary data from database
             summary = await self.supabase_client.database.get_transaction_summary(user_id, days)
@@ -446,6 +496,9 @@ class TransactionAgent:
             print(f"❌ Error generating summary: {e}")
             return "❌ Sorry, I couldn't generate your financial summary right now. Please try again later."
     
+
+    #Tools
+
     def _validate_category(self, category: str, transaction_type: str) -> str:
         """Validate category against predefined lists"""
         if transaction_type == "expense":

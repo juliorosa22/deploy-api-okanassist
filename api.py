@@ -109,7 +109,7 @@ async def handle_start(request: StartRequest):
         
         # Use centralized authentication
         auth_request = AuthCheckRequest(
-            telegram_id=request.user_id,
+            telegram_id=request.telegram_id,
             user_name=request.user_data.get("name", None),
             supabase_user_id=request.args[0] if request.args else None,
             language=lang,
@@ -147,7 +147,7 @@ async def handle_upgrade(request: UpgradeRequest):
     await initialize_services()
     try:
         # 1. Authenticate the user and get their data
-        auth_request = AuthCheckRequest(telegram_id=request.user_id)
+        auth_request = AuthCheckRequest(telegram_id=request.telegram_id)
         user_data = await get_user_data(auth_request)
         #return {"success": False, "message": "Upgrades are currently disabled. Please contact support."}
         # 2. Check if the user is already premium
@@ -227,28 +227,52 @@ async def route_message(request: MessageRequest):
             raise HTTPException(status_code=503, detail="Service not ready")
         
         # Step 1: Get user data using centralized helper
-        user_data = await get_user_data(AuthCheckRequest(telegram_id=request.user_id))
+        user_data = await get_user_data(AuthCheckRequest(telegram_id=request.telegram_id))
         supabase_id = user_data.get('user_id', None)
-        telegram_id = request.user_id
-        print("user_data:", user_data)
-        # Step 2: Consume credits (since auth is now verified)
+        
+        # Step 2: Consume credits
         credit_result = await check_and_consume_credits(supabase_id, 'text_message', 1, user_data)
-        print("credit_result:", credit_result)
+        if not credit_result["success"]:
+            return {"success": False, "message": credit_result.get("message")}
+
         user_data.setdefault('language', lang)
+        
         # Step 3: Process the message
-        if credit_result["success"]:
-            result = await main_agent.route_message(supabase_id, request.message, user_data)
+        agent_response = await main_agent.route_message(user_data, request.message)
+        
+        response_type = agent_response.get("type")
+        response_content = agent_response.get("content")
+
+        # Handle text responses
+        if response_type == "text":
+            final_message = response_content
             # Add credit info to response if not premium
             if not credit_result.get('is_premium', False):
                 credits_remaining = credit_result.get('credits_remaining', 0)
-                
                 if credits_remaining <= 10:
-                    result += get_message("credit_warning", lang, credits_remaining=credits_remaining)
-                    result += get_message("credit_low", lang)
-                print("Final result:", result)
-            return {"success": True, "message": result}
+                    final_message += get_message("credit_warning", lang, credits_remaining=credits_remaining)
+            
+            return {"success": True, "message": final_message}
+        
+        # Handle file responses (for PDF reports)
+        elif response_type == "file":
+            file_path = response_content
+            caption = agent_response.get("caption", "Here is your report.")
+            
+            await send_telegram_document(request.telegram_id, file_path, caption)
+            
+            # Clean up the temporary file
+            try:
+                os.remove(file_path)
+            except Exception as e:
+                print(f"⚠️ Failed to remove temporary file {file_path}: {e}")
+            
+            # Send a confirmation text message
+            return {"success": True, "message": get_message("report_sent", lang)}
+            
         else:
-            return {"success": False, "message": credit_result.get("message")}
+            # Fallback for unexpected response types
+            return {"success": False, "message": "An unexpected error occurred."}
         
     except HTTPException:
         raise
@@ -256,15 +280,31 @@ async def route_message(request: MessageRequest):
         print(f"❌ Unexpected error in route_message: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
+async def send_telegram_document(telegram_id: str, file_path: str, caption: str):
+    """Send a document file via Telegram Bot API."""
+    bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
+    url = f"https://api.telegram.org/bot{bot_token}/sendDocument"
+    
+    async with aiohttp.ClientSession() as session:
+        with open(file_path, 'rb') as f:
+            data = aiohttp.FormData()
+            data.add_field('chat_id', str(telegram_id))
+            data.add_field('caption', caption)
+            data.add_field('document', f, filename=os.path.basename(file_path), content_type='application/pdf')
+            
+            async with session.post(url, data=data) as response:
+                if not response.ok:
+                    print(f"❌ Failed to send document to {telegram_id}: {await response.text()}")
+
 @app.post("/okanassist/v1/process-audio")
-async def process_audio(user_id: str = Form(...), file: UploadFile = File(...)):
+async def process_audio(telegram_id: str = Form(...), file: UploadFile = File(...)):
     """Process user audio input and route to the correct agent."""
     await initialize_services()
     try:
         if not main_agent:
             raise HTTPException(status_code=503, detail="Service not ready")
         # Step 1: Get user data
-        user_data = await get_user_data(AuthCheckRequest(telegram_id=user_id))
+        user_data = await get_user_data(AuthCheckRequest(telegram_id=telegram_id))
         supabase_id = user_data.get('user_id', None)
         lang = user_data.get('language', 'en')
         user_timezone = user_data.get('timezone', 'UTC')
@@ -330,7 +370,7 @@ async def process_notification(request: NotificationRequest):
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.post("/okanassist/v1/process-receipt")
-async def process_receipt(user_id: str=Form(...), file: UploadFile = File(...)):
+async def process_receipt(telegram_id: str=Form(...), file: UploadFile = File(...)):
     """Process receipt image - REQUIRES AUTHENTICATION + CREDITS"""
     await initialize_services()
     try:
@@ -338,7 +378,7 @@ async def process_receipt(user_id: str=Form(...), file: UploadFile = File(...)):
             raise HTTPException(status_code=503, detail="Service not ready")
         print("here: in process_receipt")
         # Step 1: Get user data using centralized helper
-        user_data = await get_user_data(AuthCheckRequest(telegram_id=user_id))
+        user_data = await get_user_data(AuthCheckRequest(telegram_id=telegram_id))
         supabase_id = user_data.get('user_id', None)
         lang_code = user_data.get('language', 'en')
         # Step 2: Consume credits (since auth is now verified)
@@ -376,7 +416,7 @@ async def process_receipt(user_id: str=Form(...), file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.post("/okanassist/v1/process-bank-statement")
-async def process_bank_statement(user_id: str = Form(...), file: UploadFile = File(...)):
+async def process_bank_statement(telegram_id: str = Form(...), file: UploadFile = File(...)):
     """Process bank statement PDF - REQUIRES AUTHENTICATION"""
     await initialize_services()
     try:
@@ -384,7 +424,7 @@ async def process_bank_statement(user_id: str = Form(...), file: UploadFile = Fi
             raise HTTPException(status_code=503, detail="Service not ready")
         
         # Step 1: Get user data using centralized helper
-        user_data = await get_user_data(AuthCheckRequest(telegram_id=user_id))
+        user_data = await get_user_data(AuthCheckRequest(telegram_id=telegram_id))
         supabase_id = user_data.get('user_id', None)
         lang_code = user_data.get('language', 'en')
         # Step 2: Consume credits (since auth is now verified) - Note: 0 credits for bank statement
@@ -430,7 +470,7 @@ async def get_transaction_summary(request: SummaryRequest):
             raise HTTPException(status_code=503, detail="Service not ready")
         
         # Step 1: Get user data using centralized helper
-        user_data = await get_user_data(AuthCheckRequest(telegram_id=request.user_id))
+        user_data = await get_user_data(AuthCheckRequest(telegram_id=request.telegram_id))
         supabase_id = user_data.get('user_id', None)
         # Step 2: Process the summary (no credits needed)
         result = await transaction_agent.get_summary(supabase_id, request.days)
@@ -444,7 +484,7 @@ async def get_transaction_summary(request: SummaryRequest):
 
 ### Reminders Endpoints
 @app.post("/okanassist/v1/get-reminders")
-async def get_reminders(user_id: str, limit: int = 10):
+async def get_reminders(telegram_id: str, limit: int = 10):
     """Get user reminders - REQUIRES AUTHENTICATION"""
     await initialize_services()
     try:
@@ -452,7 +492,7 @@ async def get_reminders(user_id: str, limit: int = 10):
             raise HTTPException(status_code=503, detail="Service not ready")
         
         # Step 1: Get user data using centralized helper
-        user_data = await get_user_data(AuthCheckRequest(telegram_id=user_id))
+        user_data = await get_user_data(AuthCheckRequest(telegram_id=telegram_id))
         
         # Step 2: Process the reminders (no credits needed)
         result = await reminder_agent.get_reminders(user_data)
@@ -614,12 +654,12 @@ async def register_user(request: RegisterRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/okanassist/v1/profile")
-async def get_profile(user_id: str):
+async def get_profile(telegram_id: str):
     """Get user profile - REQUIRES AUTHENTICATION"""
     await initialize_services()
     try:
         # Step 1: Get user data using centralized helper
-        user_data = await get_user_data(AuthCheckRequest(telegram_id=user_id))
+        user_data = await get_user_data(AuthCheckRequest(telegram_id=telegram_id))
         if user_data.get("is_premium"):
             customer_id = await supabase_client.get_customer_id_from_payments(user_data["user_id"])
             manage_url = await supabase_client.create_customer_portal_link(customer_id)
@@ -897,3 +937,4 @@ async def convert_audio(input_path: str, output_path: str) -> str:
     except Exception as e:
         print(f"❌ Audio conversion failed: {e}")
         raise RuntimeError("Audio conversion failed")
+

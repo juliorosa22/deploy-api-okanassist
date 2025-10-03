@@ -2,7 +2,7 @@ from agno.agent import Agent
 import re
 import json
 from datetime import datetime, timedelta
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import asyncio
 from agno.models.groq import Groq
 from tools import Reminder, ReminderType, Priority, SupabaseClient
@@ -14,253 +14,338 @@ class ReminderAgent:
 
     def __init__(self, supabase_client: SupabaseClient):
         self.supabase_client = supabase_client
-        
+
         self.agent = Agent(
             name="ReminderProcessor",
             model=Groq(id="llama-3.3-70b-versatile", temperature=0.2),
             instructions="""
-            You are a multilingual reminder and task management specialist. Your goal is to parse natural language messages to extract reminder details into a strict JSON format.
+            You are a multilingual AI assistant specializing in task and reminder management. Your primary goal is to understand a user's intent from their message and respond accordingly.
 
-            **Thought Process:**
-            1.  **Analyze the user's message** to identify the core task or event.
-            2.  **Identify the due date and time**. You will be given the user's current time for context. Convert relative expressions like "tomorrow at 3pm" or "in 2 hours" into a specific UTC ISO 8601 format.
-            3.  **Determine priority**: "urgent", "high", "medium", or "low". Default to "medium".
-            4.  **Determine reminder type**: "task", "event", "deadline", "habit", or "general". Default to "general".
-            5.  **Determine if a reminder is recurring and its pattern**: "daily", "weekly" or "monthly". If not recurring, set to null.
+            **Step 1: Intent Detection**
+            First, determine the user's intent. The possible intents are:
+            - `create_reminder`: The user wants to create a new reminder. (e.g., "remind me to call mom tomorrow", "meeting in 30 mins", "pay bills next week", "doctor appointment on Sept 20 at 3pm", "daily workout at 7am", "weekly team sync every Monday at 10am")
+            - `get_reminders`: The user wants to see a list of their existing reminders. (e.g., "show my tasks", "what are my urgent tasks tomorrow?","what are my reminders for this week?", "show urgent reminders", "show my schedule for week")
 
-            **Rules & Output Format:**
-            - You will be told the user's language. The user's message will be in that language.
-            - You MUST return ONLY a valid JSON object. No explanations or surrounding text.
-            - The `due_date` MUST be in UTC ISO 8601 format (e.g., "2025-09-18T15:00:00Z"). If no specific time is found, this should be null.
-            - If no clear reminder is found in the message, return `{"reminder_found": false}`.
-            Example valid outputs:
-            {{
-                "reminder_found": true,
-                "title": "Call Mom",
-                "description": "Remember to call Mom to check in tomorrow.",
-                "due_datetime": "2025-09-18T15:00:00Z",
-                "priority": "high",
-                "reminder_type": "habit",
-                "is_recurring": True,
-                "recurrence_pattern": "weekly"
-            }},
-            {{
-                "reminder_found": true,
-                "title": "Gym Workout",
-                "description": "Remember to attend the gym workout session.",
-                "due_datetime": "2025-09-19T18:00:00Z",
-                "priority": "medium",
-                "reminder_type": "habit",
-                "is_recurring": True,
-                "recurrence_pattern": "daily"
-            }},
-            {{
-                "reminder_found": true,
-                "title": "Pay Rent",
-                "description": "Monthly rent payment.",
-                "due_datetime": "2025-10-01T00:00:00Z",
-                "priority": "urgent",
-                "reminder_type": "deadline",
-                "is_recurring": True,
-                "recurrence_pattern": "monthly"
-            
-            }}
-            {{
-                "reminder_found": false
-            }}
-            
+            **Step 2: Parameter Extraction**
+            - If the intent is `create_reminder`, extract the reminder details: `title`, `description`, `due_datetime` (in UTC ISO 8601 format), `priority`, `reminder_type`, `is_recurring`, and `recurrence_pattern`.
+            - If the intent is `get_reminders`, extract filter parameters: `priority` ("urgent", "high", "medium", "low") and `time_period` ("today", "tomorrow", "this week", "this month").
+
+            **Step 3: JSON Output**
+            You MUST return ONLY a valid JSON object based on the detected intent.
+
+            **JSON Output Examples:**
+
+            *For `create_reminder` intent:*
+            ```json
+            {
+                "intent": "create_reminder",
+                "data": {
+                    "title": "Call Mom",
+                    "description": "Remember to call Mom to check in tomorrow.",
+                    "due_datetime": "2025-09-18T15:00:00Z",
+                    "priority": "high",
+                    "reminder_type": "habit",
+                    "is_recurring": false,
+                    "recurrence_pattern": null
+                }
+            }
+            ```
+            ```json
+            {
+                "intent": "create_reminder",
+                "data": {
+                    "title": "Doctor Appointment",
+                    "description": "Don't forget your appointment with Dr. Smith on Sept 20 at 3pm.",
+                    "due_datetime": "2025-09-20T15:00:00Z",
+                    "priority": "high",
+                    "reminder_type": "event",
+                    "is_recurring": false,
+                    "recurrence_pattern": null
+                }
+            }
+            ```
+            ```json
+            {
+                "intent": "create_reminder",
+                "data": {
+                    "title": "Daily Workout",
+                    "description": "Your daily workout session.",
+                    "due_datetime": null,
+                    "priority": "medium",
+                    "reminder_type": "habit",
+                    "is_recurring": true,
+                    "recurrence_pattern": "daily"
+                }
+            }
+            ```
+
+            *For `get_reminders` intent with filters:*
+            ```json
+            {
+                "intent": "get_reminders",
+                "filters": {
+                    "priority": "urgent",
+                    "time_period": null
+                }
+            }
+            ```
+            ```json
+            {
+                "intent": "get_reminders",
+                "filters": {
+                    "priority": "urgent",
+                    "time_period": "tomorrow"
+                }
+            }
+            ```
+
+            ```json
+            {
+                "intent": "get_reminders",
+                "filters": {
+                    "priority": null,
+                    "time_period": "this week"
+                }
+            }
+            ```
+
+            *If no clear intent is found:*
+            ```json
+            {
+                "intent": "unclear"
+            }
+            ```
             """
         )
-    
-    async def process_message(self, user_id: str, message: str, language: str, user_timezone: str) -> str:
-        """Process a text message for reminder data in the user's language and timezone."""
+
+    async def process_message(self, user_data: Dict[str, Any], message: str) -> str:
+        """
+        Process a text message to determine user intent (create or get reminders)
+        and execute the corresponding action.
+        """
+        language = user_data.get('language', 'en')
+        user_timezone = user_data.get('timezone', 'UTC')
+        
         try:
-            # Get the current time IN THE USER'S TIMEZONE
-            try:
-                user_tz = pytz.timezone(user_timezone)
-            except pytz.UnknownTimeZoneError:
-                print(f"⚠️ Unknown timezone '{user_timezone}'. Defaulting to UTC.")
-                user_tz = pytz.utc
-            
-            user_now_iso = datetime.now(user_tz).isoformat()
+            user_tz = pytz.timezone(user_timezone)
+        except pytz.UnknownTimeZoneError:
+            user_tz = pytz.utc
+        user_now = datetime.now(user_tz)
 
-            # --- 2. Create a simple, dynamic prompt ---
-            lang_map = {'es': 'Spanish', 'pt': 'Portuguese', 'en': 'English'}
-            lang_name = lang_map.get(language.split('-')[0], 'English')
+        extraction_prompt = f"""
+        The user's current date and time is {user_now.isoformat()}.
+        Analyze the following user message and return the JSON output based on your instructions.
 
-            extraction_prompt = f"""
-            Analyse the user language.
-            The user's current date and time is {user_now_iso}.
-            All times in the user's message are in their local timezone ({user_timezone}). Convert relative expressions like "tomorrow at 3pm" or "in 2 hours" into a specific UTC ISO 8601 format.
-            Analyze the following user message and return the JSON output based on your instructions.
+        **User Message:** "{message}"
+        """
+        
+        response_obj = await asyncio.to_thread(self.agent.run, extraction_prompt)
+        response_str = str(response_obj.content)
+        print(f"🤖 Intent Router LLM Response: {response_str}")
 
-            **User Message:** "{message}"
-            """
-            
-            response_obj = await asyncio.to_thread(self.agent.run, extraction_prompt)
-            response_str = str(response_obj.content)
-            print(f"🤖 LLM Response: {response_str}")
-
-            # Extract JSON from the response (handles extra text/markdown)
+        try:
             json_match = re.search(r'\{.*\}', response_str, re.DOTALL)
-            data = {}
-            if json_match:
-                try:
-                    data = json.loads(json_match.group())
-                except json.JSONDecodeError:
-                    print("⚠️ JSON parsing failed, using fallback.")
-                    data = self._fallback_parse(message, language)
-            else:
-                print("⚠️ No JSON found in response, using fallback.")
-                data = self._fallback_parse(message, language)
-
-            if not data.get("reminder_found", True):
-                return get_message("reminder_not_found", language)
-            print(f"✅ Parsed Data: {data}")
-            due_datetime = self._parse_due_date(data.get("due_datetime")) if data.get("due_datetime") else None
-            due_datetime_utc = None
-            if due_datetime:
-                # Convert aware datetime to naive UTC for database storage
-                due_datetime_utc = due_datetime.astimezone(pytz.utc).replace(tzinfo=None)
-            print(f"Original due date: {due_datetime}")
-            print(f"Parsed due date (naive UTC): {due_datetime_utc}")
-
-            reminder = Reminder(
-                user_id=user_id,
-                title=data.get("title", "No Title"),
-                description=data.get("description", f"{message}"),
-                source_platform="telegram",
-                is_completed=False,
-                notification_sent=False,
-                due_datetime=due_datetime_utc,  # Use naive UTC here
-                reminder_type=ReminderType(data.get("reminder_type", "general")),
-                priority=Priority(data.get("priority", "medium")),
-                tags=message,
-                is_recurring=data.get("is_recurring", False),
-                recurrence_pattern=data.get("recurrence_pattern", None)
-            )
-            
-            await self.supabase_client.database.save_reminder(reminder)
-            
-            # Format due date for display in user's local time (convert from naive UTC)
-            display_due_date = "N/A"
-            if due_datetime_utc:
-                # Localize naive UTC to aware UTC, then convert to user timezone
-                utc_aware = pytz.utc.localize(due_datetime_utc)
-                local_due_date = utc_aware.astimezone(user_tz)
-                display_due_date = local_due_date.strftime('%Y-%m-%d %H:%M')
-            print(f"Display due date: {display_due_date} | Original due date: {due_datetime}")
-
-            return get_message(
-                "reminder_created",
-                language,
-                title=data['title'],
-                due_date=display_due_date,
-                priority=data.get('priority', 'medium').title(),
-                type=data.get('reminder_type', 'general').title()
-            )
-            
-        except Exception as e:
-            print(f"❌ Error processing reminder message: {e}")
+            if not json_match:
+                raise ValueError("No JSON object found in LLM response.")
+            parsed_response = json.loads(json_match.group())
+            intent = parsed_response.get("intent")
+        except (json.JSONDecodeError, ValueError) as e:
+            print(f"⚠️ Could not parse intent from LLM response: {e}")
             return get_message("reminder_creation_failed", language)
 
-    async def get_reminders(self, user_data: dict, limit: int = 10) -> str:
-        """Get user's pending reminders, formatted for their language and timezone."""
+        if intent == "create_reminder":
+            return await self._handle_create_reminder(user_data, parsed_response.get("data", {}))
+        elif intent == "get_reminders":
+            return await self._handle_get_reminders(user_data, parsed_response.get("filters", {}))
+        else:
+            return get_message("reminder_not_found", language)
+
+    async def _handle_create_reminder(self, user_data: Dict[str, Any], data: Dict[str, Any]) -> str:
+        """Handles the logic for creating a new reminder."""
+        user_id = user_data.get('user_id')
+        language = user_data.get('language', 'en')
+        user_timezone = user_data.get('timezone', 'UTC')
+        user_tz = pytz.timezone(user_timezone)
+
+        if not data.get("title"):
+            return get_message("reminder_creation_failed", language)
+
+        due_datetime_utc = None
+        if data.get("due_datetime"):
+            # LLM returns UTC, so parse it and make it naive for DB storage
+            due_datetime_utc = self._parse_due_date(data.get("due_datetime")).replace(tzinfo=None)
+
+        due_datetime_response = data.get("due_datetime")
+        print(f"🗓️ Parsed due date (UTC): {due_datetime_response} -> {due_datetime_utc}")
+
+        reminder = Reminder(
+            user_id=user_id,
+            title=data.get("title"),
+            description=data.get("description", data.get("title")),
+            source_platform="telegram",
+            is_completed=False,
+            notification_sent=False,
+            due_datetime=due_datetime_utc,
+            reminder_type=ReminderType(data.get("reminder_type", "general")),
+            priority=Priority(data.get("priority", "medium")),
+            is_recurring=data.get("is_recurring", False),
+            recurrence_pattern=data.get("recurrence_pattern")
+        )
+        
+        await self.supabase_client.database.save_reminder(reminder)
+        
+        display_due_date = "N/A"
+        if due_datetime_utc:
+            local_due_date = pytz.utc.localize(due_datetime_utc).astimezone(user_tz)
+            display_due_date = local_due_date.strftime('%Y-%m-%d %H:%M')
+
+        return get_message(
+            "reminder_created",
+            language,
+            title=data['title'],
+            due_date=display_due_date,
+            priority=data.get('priority', 'medium').title(),
+            type=data.get('reminder_type', 'general').title()
+        )
+
+    async def _handle_get_reminders(self, user_data: Dict[str, Any], filters: Dict[str, Any]) -> str:
+        """Handles the logic for fetching and formatting reminders based on filters."""
+        user_id = user_data.get('user_id')
+        user_timezone = user_data.get('timezone', 'UTC')
+        user_tz = pytz.timezone(user_timezone)
+        now = datetime.now(user_tz)
+
+        priority = filters.get("priority")
+        time_period = filters.get("time_period")
+        
+        start_date, end_date = None, None
+        if time_period == "today":
+            start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            end_date = start_date + timedelta(days=1)
+        elif time_period == "this week":
+            start_date = now - timedelta(days=now.weekday())
+            start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+            end_date = start_date + timedelta(weeks=1)
+        elif time_period == "this month":
+            start_date = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            # Find the first day of the next month, then subtract one day
+            next_month = (start_date.replace(day=28) + timedelta(days=4)).replace(day=1)
+            end_date = next_month
+
+        # Convert to UTC for query
+        start_date_utc = start_date.astimezone(pytz.utc) if start_date else None
+        end_date_utc = end_date.astimezone(pytz.utc) if end_date else None
+
+        reminders = await self.supabase_client.database.get_user_reminders(
+            user_id, 
+            priority=priority,
+            start_date=start_date_utc,
+            end_date=end_date_utc
+        )
+        
+        if not reminders:
+            return get_message("no_pending_reminders", user_data.get('language', 'en'))
+
+        # Reuse the existing get_reminders method for formatting the output
+        return await self.format_reminders_for_display(user_data, reminders)
+
+
+    async def get_reminders(self, user_data: Dict[str, Any], limit: int = 10) -> str:
+        """Get user's latest pending reminders, formatted for display."""
+        reminders = await self.supabase_client.database.get_user_reminders(
+            user_data.get('user_id'), include_completed=False, limit=limit
+        )
+        if not reminders:
+            return get_message("no_pending_reminders", user_data.get('language', 'en'))
+        
+        return await self.format_reminders_for_display(user_data, reminders)
+
+    async def format_reminders_for_display(self, user_data: Dict[str, Any], reminders: List[Reminder]) -> str:
+        """Takes a list of reminders and formats them into a human-readable string."""
+        language = user_data.get('language', 'en')
+        user_timezone = user_data.get('timezone', 'UTC')
+        
         try:
-            user_id = user_data.get('user_id')
-            language = user_data.get('language', 'en')
-            user_timezone = user_data.get('timezone', 'UTC')
+            user_tz = pytz.timezone(user_timezone)
+        except pytz.UnknownTimeZoneError:
+            user_tz = pytz.utc
+        user_now_iso = datetime.now(user_tz).isoformat()
 
-            reminders = await self.supabase_client.database.get_user_reminders(
-                user_id, include_completed=False, limit=limit
-            )
-            
-            if not reminders:
-                return get_message("no_pending_reminders", language)
-            
-            # --- Also provide user's current time for relative date formatting ---
-            try:
-                user_tz = pytz.timezone(user_timezone)
-            except pytz.UnknownTimeZoneError:
-                user_tz = pytz.utc
-            user_now_iso = datetime.now(user_tz).isoformat()
+        reminders_data = []
+        for reminder in reminders:
+            reminders_data.append({
+                "title": reminder.title,
+                "due": reminder.due_datetime.isoformat() if reminder.due_datetime else None,
+                "priority": reminder.priority.value,
+                "type": reminder.reminder_type.value
+            })
+        
+        format_prompts = {
+            "en": f"""
+            The user's current time is {user_now_iso}. Format this list of reminders into a clean, readable message for Telegram. Do NOT output JSON—return plain text with emojis, line breaks, and Markdown formatting (e.g., bold for sections).
 
-            reminders_data = []
-            for reminder in reminders:
-                reminders_data.append({
-                    "title": reminder.title,
-                    "due": reminder.due_datetime.isoformat() if reminder.due_datetime else None,
-                    "priority": reminder.priority.value,
-                    "type": reminder.reminder_type.value
-                })
-            
-            format_prompts = {
-                "en": f"""
-                The user's current time is {user_now_iso}. Format this list of reminders into a clean, readable message for Telegram. Do NOT output JSON—return plain text with emojis, line breaks, and Markdown formatting (e.g., bold for sections).
+            Group reminders by priority: Urgent first, then High, Medium, Low. For each group, list reminders as bullet points like: "- [Emoji] Title (due [relative date]) - Type"
 
-                Group reminders by priority: Urgent first, then High, Medium, Low. For each group, list reminders as bullet points like: "- [Emoji] Title (due [relative date]) - Type"
+            Use these emojis:
+            - Priority: 🔥 Urgent, ❗ High, 📌 Medium, 📝 Low
+            - Type: 🕐 Task, 📅 Event, ⏰ Deadline, 🔄 Habit, 📝 General
 
-                Use these emojis:
-                - Priority: 🔥 Urgent, ❗ High, 📌 Medium, 📝 Low
-                - Type: 🕐 Task, 📅 Event, ⏰ Deadline, 🔄 Habit, 📝 General
+            Example output:
+            🔥 Urgent Reminders:
+            - 📅 Call Mom (due today at 3:00 PM) - Habit
 
-                Example output:
-                🔥 Urgent Reminders:
-                - 📅 Call Mom (due today at 3:00 PM) - Habit
+            ❗ High Priority:
+            - ⏰ Pay Rent (due tomorrow) - Deadline
 
-                ❗ High Priority:
-                - ⏰ Pay Rent (due tomorrow) - Deadline
+            Reminders data: {json.dumps(reminders_data)}
+            """,
+            "es": f"""
+            La hora actual del usuario es {user_now_iso}. Formatea esta lista de recordatorios en un mensaje limpio y legible para Telegram. NO salidas JSON—devuelve texto plano con emojis, saltos de línea y formato Markdown (ej. negrita para secciones).
 
-                Reminders data: {json.dumps(reminders_data)}
-                """,
-                "es": f"""
-                La hora actual del usuario es {user_now_iso}. Formatea esta lista de recordatorios en un mensaje limpio y legible para Telegram. NO salidas JSON—devuelve texto plano con emojis, saltos de línea y formato Markdown (ej. negrita para secciones).
+            Agrupa los recordatorios por prioridad: Urgente primero, luego Alta, Media, Baja. Para cada grupo, lista los recordatorios como viñetas como: "- [Emoji] Título (vencimiento [fecha relativa]) - Tipo"
 
-                Agrupa los recordatorios por prioridad: Urgente primero, luego Alta, Media, Baja. Para cada grupo, lista los recordatorios como viñetas como: "- [Emoji] Título (vencimiento [fecha relativa]) - Tipo"
+            Usa estos emojis:
+            - Prioridad: 🔥 Urgente, ❗ Alta, 📌 Media, 📝 Baja
+            - Tipo: 🕐 Tarea, 📅 Evento, ⏰ Fecha límite, 🔄 Hábito, 📝 General
 
-                Usa estos emojis:
-                - Prioridad: 🔥 Urgente, ❗ Alta, 📌 Media, 📝 Baja
-                - Tipo: 🕐 Tarea, 📅 Evento, ⏰ Fecha límite, 🔄 Hábito, 📝 General
+            Ejemplo de salida:
+            🔥 Recordatorios Urgentes:
+            - 📅 Llamar a Mamá (vencimiento hoy a las 3:00 PM) - Hábito
 
-                Ejemplo de salida:
-                🔥 Recordatorios Urgentes:
-                - 📅 Llamar a Mamá (vencimiento hoy a las 3:00 PM) - Hábito
+            ❗ Prioridad Alta:
+            - ⏰ Pagar Renta (vencimiento mañana) - Fecha límite
 
-                ❗ Prioridad Alta:
-                - ⏰ Pagar Renta (vencimiento mañana) - Fecha límite
+            Datos de recordatorios: {json.dumps(reminders_data)}
+            """,
+            "pt": f"""
+            A hora atual do usuário é {user_now_iso}. Formate esta lista de lembretes em uma mensagem limpa e legível para Telegram. NÃO saia JSON—retorne texto plano com emojis, quebras de linha e formatação Markdown (ex. negrito para seções).
 
-                Datos de recordatorios: {json.dumps(reminders_data)}
-                """,
-                "pt": f"""
-                A hora atual do usuário é {user_now_iso}. Formate esta lista de lembretes em uma mensagem limpa e legível para Telegram. NÃO saia JSON—retorne texto plano com emojis, quebras de linha e formatação Markdown (ex. negrito para seções).
+            Agrupe os lembretes por prioridade: Urgente primeiro, depois Alta, Média, Baixa. Para cada grupo, liste os lembretes como marcadores como: "- [Emoji] Título (vencimento [data relativa]) - Tipo"
 
-                Agrupe os lembretes por prioridade: Urgente primeiro, depois Alta, Média, Baixa. Para cada grupo, liste os lembretes como marcadores como: "- [Emoji] Título (vencimento [data relativa]) - Tipo"
+            Use estes emojis:
+            - Prioridade: 🔥 Urgente, ❗ Alta, 📌 Média, 📝 Baixa
+            - Tipo: 🕐 Tarefa, 📅 Evento, ⏰ Prazo, 🔄 Hábito, 📝 Geral
 
-                Use estes emojis:
-                - Prioridade: 🔥 Urgente, ❗ Alta, 📌 Média, 📝 Baixa
-                - Tipo: 🕐 Tarefa, 📅 Evento, ⏰ Prazo, 🔄 Hábito, 📝 Geral
+            Exemplo de saída:
+            🔥 Lembretes Urgentes:
+            - 📅 Ligar para Mamãe (vencimento hoje às 3:00 PM) - Hábito
 
-                Exemplo de saída:
-                🔥 Lembretes Urgentes:
-                - 📅 Ligar para Mamãe (vencimento hoje às 3:00 PM) - Hábito
+            ❗ Prioridade Alta:
+            - ⏰ Pagar Aluguel (vencimento amanhã) - Prazo
 
-                ❗ Prioridade Alta:
-                - ⏰ Pagar Aluguel (vencimento amanhã) - Prazo
+            Dados de lembretes: {json.dumps(reminders_data)}
+            """
+        }
+        
+        format_prompt = format_prompts.get(language, format_prompts["en"])
+        # This part is simplified as the prompts are large and unchanged
+        format_prompt = format_prompt.replace("Reminders data: {}", f"Reminders data: {json.dumps(reminders_data)}")
 
-                Dados de lembretes: {json.dumps(reminders_data)}
-                """
-            }
-            
-            format_prompt = format_prompts.get(language, format_prompts["en"])
-            response = await asyncio.to_thread(self.agent.run, format_prompt)
-            formatted_list = str(response.content)
-            
-            return f"{get_message('pending_reminders_header', language)}\n\n{formatted_list}"
-            
-        except Exception as e:
-            print(f"❌ Error getting reminders: {e}")
-            return get_message("reminder_fetch_failed", language)
-    
+        response = await asyncio.to_thread(self.agent.run, format_prompt)
+        formatted_list = str(response.content)
+        
+        return f"{get_message('pending_reminders_header', language)}\n\n{formatted_list}"
+
     async def get_due_soon(self, user_id: str, hours: int = 24) -> str:
         """Get reminders due soon"""
         try:

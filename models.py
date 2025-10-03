@@ -2,7 +2,7 @@ from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 
 class MessageRequest(BaseModel):
-    user_id: str
+    telegram_id: str
     message: str
     user_data: Optional[Dict[str, Any]] = {}
     language_code: Optional[str]= 'en'  # NEW
@@ -20,11 +20,11 @@ class ReminderResponse(BaseModel):
     reminder_id: Optional[str] = None
 
 class SummaryRequest(BaseModel):
-    user_id: str
+    telegram_id: str
     days: int = 30
 
 class StartRequest(BaseModel):
-    user_id: str
+    telegram_id: str
     user_data: Dict[str, Any]
     args: Optional[List[str]] = None
     email: Optional[str] = None  # NEW
@@ -58,5 +58,5 @@ class NotificationRequest(BaseModel):
     text: str  # New field for the notification text
 
 class UpgradeRequest(BaseModel):
-    user_id: str
+    telegram_id: str
 
