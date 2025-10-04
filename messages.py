@@ -62,43 +62,33 @@ MESSAGES = {
         "no_pending_reminders": "👍 You have no pending reminders. Great job!",
         "pending_reminders_header": "🗓️ *Here are your upcoming reminders:*",
         "reminder_fetch_failed": "❌ Sorry, I couldn't fetch your reminders right now.",
-        "report_sent": "📩 *Transaction report sent!*\n\nCheck your email for the PDF summary of your transactions.",
+        "report_sent": "📩 *Transaction report sent!*\n\nCheck your Telegram messages for the PDF file.",
 
          "help_message": """
-🤖 *OkanAssist Bot*
+🤖 *OkanAssist Bot Help*
 
-*💰 Transactions Messages:*
-• "Spent $25 on lunch at McDonald's"
-• "Paid $1200 rent"
-• "Bought groceries for $85"
-• "Received $3000 salary"
-• "Got $50 freelance payment"
-• "Earned $200 from side project"
+*💰 Transactions*
+You can manage your finances just by talking to me!
 
-*⏰ Reminders:*
-• "Remind me to pay bills tomorrow at 3pm"
-• "Set reminder: doctor appointment next Friday"
-• "Don't forget to call mom this weekend"
+• *Log transactions:* "Spent $25 on lunch", "Received $3000 salary"
+• *Get summaries:* "Show my spending this month", "What's my income for last week?"
+• *Generate PDF reports:* "I need a report for January", "Generate a PDF of my transactions from last month"
 
-*📊 Financial Views:*
-• /balance - View financial summary
-• /reminders - Show pending reminders
-• "Show expenses this week"
+*⏰ Reminders*
+Organize your life with smart reminders.
 
-*📄 Document Processing:*
-• Send PDF bank statements for bulk import
-• Receipt photos are automatically processed
-• Invoices and bills can be analyzed
+• *Create reminders:* "Remind me to pay bills tomorrow at 3pm"
+• *View reminders:* "Show my urgent reminders", "What are my tasks for today?"
 
-*🎯 Commands:*
-/start - Get started
+*📄 Document Processing*
+• Send a photo of a receipt to automatically log an expense.
+• Send a PDF bank statement for bulk transaction import.
+
+*🎯 Commands*
+/start - Get started or log in
 /register - Create your account
-/help - Show this help
-/balance - Financial summary
-/reminders - View reminders
-
-*🔐 Authentication Required:*
-Most features require registration. Use /register to get started!
+/help - Show this help message
+/upgrade - Get unlimited access
 
 Just talk to me naturally - I understand! 🎉
     """,
@@ -160,10 +150,37 @@ Just talk to me naturally - I understand! 🎉
         "no_pending_reminders": "👍 No tienes recordatorios pendientes. ¡Buen trabajo!",
         "pending_reminders_header": "🗓️ *Aquí están tus próximos recordatorios:*",
         "reminder_fetch_failed": "❌ Lo siento, no pude obtener tus recordatorios en este momento.",
-        "report_sent": "📩 *¡Informe de transacciones enviado!*\n\nRevisa tu email para ver el resumen PDF de tus transacciones.",
+        "report_sent": "📩 *¡Informe de transacciones enviado!*\n\nRevisa tus mensajes de Telegram para ver el archivo PDF.",
 
 
-        "help_message": "🤖 *Ayuda de OkanAssist*\n\n*💰 Gastos:* 'Gasté $25 en el almuerzo'\n*⏰ Recordatorios:* 'Recuérdame pagar las facturas mañana'\n*📊 Resumen:* /balance\n\n¡Solo háblame con naturalidad!",
+        "help_message": """
+🤖 *Ayuda de OkanAssist Bot*
+
+*💰 Transacciones*
+¡Puedes gestionar tus finanzas simplemente hablando conmigo!
+
+• *Registra transacciones:* "Gasté $25 en el almuerzo", "Recibí $3000 de salario"
+• *Obtén resúmenes:* "Muéstrame mis gastos de este mes", "¿Cuáles fueron mis ingresos de la semana pasada?"
+• *Genera reportes en PDF:* "Necesito un reporte de enero", "Genera un PDF de mis transacciones del mes pasado"
+
+*⏰ Recordatorios*
+Organiza tu vida con recordatorios inteligentes.
+
+• *Crea recordatorios:* "Recuérdame pagar las facturas mañana a las 3pm"
+• *Ver recordatorios:* "Muestra mis recordatorios urgentes", "¿Cuáles son mis tareas para hoy?"
+
+*📄 Procesamiento de Documentos*
+• Envía una foto de un recibo para registrar un gasto automáticamente.
+• Envía un extracto bancario en PDF para importar transacciones en bloque.
+
+*🎯 Comandos*
+/start - Empezar o iniciar sesión
+/register - Crear tu cuenta
+/help - Mostrar este mensaje de ayuda
+/upgrade - Obtener acceso ilimitado
+
+¡Solo háblame con naturalidad! 🎉
+""",
         "credit_warning": "\n\n💳 **Créditos restantes: {credits_remaining}**",
         "credit_low": "\n🚨 ¡Casi sin créditos! Escribe /upgrade para uso ilimitado.",
         "insufficient_credits": "🚀 Has alcanzado tu límite de créditos. Para continuar, por favor usa /upgrade para acceso ilimitado.",
@@ -234,8 +251,36 @@ Just talk to me naturally - I understand! 🎉
         "no_pending_reminders": "👍 Você não tem lembretes pendentes. Ótimo trabalho!",
         "pending_reminders_header": "🗓️ *Aqui estão seus próximos lembretes:*",
         "reminder_fetch_failed": "❌ Desculpe, não consegui buscar seus lembretes agora.",
+        "report_sent": "📩 *Relatório de transações enviado!*\n\nVerifique suas mensagens no Telegram para o arquivo PDF.",
 
-        "help_message": "🤖 *Ajuda do OkanAssist*\n\n*💰 Despesas:* 'Gastei R$25 no almoço'\n*⏰ Lembretes:* 'Lembre-me de pagar as contas amanhã'\n*📊 Resumo:* /balance\n\nÉ só falar comigo normalmente!",
+        "help_message": """
+🤖 *Ajuda do OkanAssist Bot*
+
+*💰 Transações*
+Você pode gerenciar suas finanças apenas falando comigo!
+
+• *Registre transações:* "Gastei R$25 no almoço", "Recebi R$3000 de salário"
+• *Obtenha resumos:* "Mostre meus gastos deste mês", "Qual foi minha receita da semana passada?"
+• *Gere relatórios em PDF:* "Preciso de um relatório de janeiro", "Gere um PDF das minhas transações do mês passado"
+
+*⏰ Lembretes*
+Organize sua vida com lembretes inteligentes.
+
+• *Crie lembretes:* "Lembre-me de pagar as contas amanhã às 15h"
+• *Veja lembretes:* "Mostre meus lembretes urgentes", "Quais são minhas tarefas para hoje?"
+
+*📄 Processamento de Documentos*
+• Envie a foto de um recibo para registrar uma despesa automaticamente.
+• Envie um extrato bancário em PDF para importar transações em massa.
+
+*🎯 Comandos*
+/start - Começar ou fazer login
+/register - Criar sua conta
+/help - Mostrar esta mensagem de ajuda
+/upgrade - Obter acesso ilimitado
+
+É só falar comigo normalmente! 🎉
+""",
         "credit_warning": "\n\n💳 **Créditos restantes: {credits_remaining}**",
         "credit_low": "\n🚨 Quase sem créditos! Digite /upgrade para uso ilimitado.",
         "insufficient_credits": "🚀 Você atingiu seu limite de créditos. Para continuar, por favor, use /upgrade para acesso ilimitado.",

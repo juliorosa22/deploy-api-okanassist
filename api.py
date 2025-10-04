@@ -317,13 +317,20 @@ async def process_audio(telegram_id: str = Form(...), file: UploadFile = File(..
         mp3_path = ogg_path.replace(".ogg", ".mp3")
         mp3_path=await convert_audio(ogg_path, mp3_path)
         # Step 2: Route audio through main agent
-        result = await main_agent.route_audio(supabase_id, mp3_path, user_data)
+        result = await main_agent.route_audio(user_data, mp3_path)
+        
+        # Check if the result is a dictionary with a 'type' key, and extract content
+        if isinstance(result, dict) and result.get("type") == "text":
+            final_message = result.get("content")
+        else:
+            # Fallback for raw string responses or other types
+            final_message = str(result)
 
         # Clean up temp file
         os.unlink(ogg_path)
         os.unlink(mp3_path)
 
-        return {"success": True, "message": result}
+        return {"success": True, "message": final_message}
     except HTTPException:
         raise
     except Exception as e:
@@ -471,9 +478,11 @@ async def get_transaction_summary(request: SummaryRequest):
         
         # Step 1: Get user data using centralized helper
         user_data = await get_user_data(AuthCheckRequest(telegram_id=request.telegram_id))
-        supabase_id = user_data.get('user_id', None)
-        # Step 2: Process the summary (no credits needed)
-        result = await transaction_agent.get_summary(supabase_id, request.days)
+        
+        # Step 2: Process the summary via the agent (no credits needed)
+        result = await transaction_agent.get_summary(user_data, request.days)
+        
+        print(f"Summary result: {result}")
         return {"success": True, "message": result}
     except HTTPException:
         raise

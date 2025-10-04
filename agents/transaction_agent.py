@@ -36,6 +36,10 @@ class TransactionAgent:
 
                 **Step 2: Parameter Extraction**
                 - If intent is `create_transaction`, extract: `amount`, `description`, `transaction_type`, `category`, `merchant`.
+                  - The `category` MUST be one of the following.
+                  - Expense Categories: {expense_cats}
+                  - Income Categories: {income_cats}
+                  - If the category is unclear, default to "Shopping" for expenses and "Other Income" for income.
                 - If intent is `get_summary` or `generate_report`, extract date filters: `start_date` and `end_date` in 'YYYY-MM-DD' format.
 
                 **Step 3: JSON Output**
@@ -121,19 +125,26 @@ class TransactionAgent:
             
             response_obj = await asyncio.to_thread(self.text_agent.run, extraction_prompt)
             response_str = response_obj.content
-            
+            print("🤖 Transaction Agent: LLM Response:", response_str)  # Debug log
             json_match = re.search(r'\{.*\}', response_str, re.DOTALL)
             if not json_match:
                 raise ValueError("No JSON object found in LLM response.")
             parsed_response = json.loads(json_match.group())
             intent = parsed_response.get("intent")
-
+            
+            print(f"Detected intent: {intent}, parsed_response: {parsed_response}")  # Debug log
             if intent == "create_transaction":
-                return await self._handle_create_transaction(user_data, parsed_response.get("data", {}))
+                data = parsed_response.get("data", {})
+                data["original_message"] = message  # Add original message for context
+                return await self._handle_create_transaction(user_data, data)
             elif intent == "get_summary":
-                return await self._handle_get_summary(user_data, parsed_response.get("filters", {}))
+                filters = parsed_response.get("filters", {})
+                filters["original_message"] = message  # Add original message for context
+                return await self._handle_get_summary(user_data, filters)
             elif intent == "generate_report":
-                return await self._handle_generate_report(user_data, parsed_response.get("filters", {}))
+                filters = parsed_response.get("filters", {})
+                filters["original_message"] = message  # Add original message for context
+                return await self._handle_generate_report(user_data, filters)
             else:
                 return {"type": "text", "content": get_message("unclear_transaction_intent", lang)}
 
@@ -141,37 +152,79 @@ class TransactionAgent:
             print(f"❌ Transaction Agent: Error processing message: {e}")
             return {"type": "text", "content": get_message("generic_error", lang)}
 
-    async def _handle_create_transaction(self, user_data: Dict[str, Any], data: Dict[str, Any]) -> Dict[str, Any]:
-        """Handles the logic for creating a new transaction."""
-        # This is the logic from your old process_message function
-        # ... (it saves the transaction and returns a confirmation message)
-        # The final return should be:
-        # return {"type": "text", "content": message_template}
+    async def get_summary(self, user_data: Dict[str, Any], days: int) -> str:
+        """
+        Generates a financial summary for a given number of past days.
+        This is a standalone method for a dedicated endpoint.
+        """
         user_id = user_data.get('user_id')
         lang = user_data.get('language', 'en')
+        try:
+            # --- FIX: Use timedelta for date calculation ---
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=days)
+            print(start_date, end_date)
+            summary = await self.supabase_client.database.get_transaction_summary(
+                user_id, start_date, end_date
+            )
+            
+            net_flow = summary.total_income - summary.total_expenses
+            flow_emoji = "📈" if net_flow >= 0 else "📉"
+            
+            message = f"{flow_emoji} *Financial Summary (Last {days} days)*\n\n"
+            message += f"💰 *Income:* ${summary.total_income:,.2f}\n"
+            message += f"💸 *Expenses:* ${summary.total_expenses:,.2f}\n"
+            message += f"📊 *Net Flow:* ${net_flow:,.2f}\n\n"
+            
+            if summary.expense_categories:
+                message += "*Top Expense Categories:*\n"
+                for cat in summary.expense_categories:
+                    message += f"• {cat['category']}: ${cat['total']:,.2f}\n"
+            
+            return message
+        except Exception as e:
+            print(f"❌ Error generating summary: {e}")
+            return get_message("generic_error", lang)
 
+    async def _handle_create_transaction(self, user_data: Dict[str, Any], data: Dict[str, Any]) -> Dict[str, Any]:
+        """Handles the logic for creating a new transaction."""
+        user_id = user_data.get('user_id')
+        lang = user_data.get('language', 'en')
+        print(f"Creating transaction for user {user_id} with data: {data}")
         if not data.get("amount") or not data.get("description"):
              return {"type": "text", "content": get_message("unclear_transaction_intent", lang)}
 
-        validated_category = self._validate_category(data["category"], data["transaction_type"])
+        # --- FIX: Use .get() with defaults for safety ---
+        transaction_type_str = data.get("transaction_type", "expense") # Default to 'expense'
+        category_str = data.get("category", "Shopping") # Default to 'Shopping'
+
+        validated_category = self._validate_category(category_str, transaction_type_str)
         
         transaction = Transaction(
             user_id=user_id,
             amount=abs(float(data["amount"])),
             description=data["description"],
             category=validated_category,
-            transaction_type=TransactionType(data["transaction_type"]),
-            original_message="User message",
+            transaction_type=TransactionType(transaction_type_str), # Use the safe variable
+            original_message=data.get("original_message", "N/A"),
             source_platform="telegram",
             merchant=data.get("merchant"),
             confidence_score=data.get("confidence", 0.9)
         )
-        
+        print("Saving transaction:", transaction)
         await self.supabase_client.database.save_transaction(transaction)
         
-        emoji = "💸" if data["transaction_type"] == "expense" else "💰"
-        message_template = get_message("transaction_created", lang, emoji=emoji, description=data['description'], amount=data['amount'], category=validated_category)
-        
+        emoji = "💸" if transaction_type_str == "expense" else "💰"
+        message_template = get_message(
+            "transaction_created", 
+            lang, 
+            emoji=emoji, 
+            description=data['description'], 
+            amount=data['amount'], 
+            category=validated_category,
+            transaction_type=transaction_type_str.title() # Pass type to message
+        )
+        print("Transaction created message:", message_template)
         return {"type": "text", "content": message_template}
 
     async def _handle_get_summary(self, user_data: Dict[str, Any], filters: Dict[str, Any]) -> Dict[str, Any]:
@@ -452,7 +505,7 @@ class TransactionAgent:
         try:
             # Get summary data from database
             summary = await self.supabase_client.database.get_transaction_summary(user_id, days)
-            
+            print(f"Summary data: {summary}")
             # Use Groq for fast insights generation
             insights_prompt = f"""
             Analyze this financial summary and provide brief insights:

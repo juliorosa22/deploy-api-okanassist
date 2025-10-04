@@ -141,7 +141,7 @@ class ReminderAgent:
         
         response_obj = await asyncio.to_thread(self.agent.run, extraction_prompt)
         response_str = str(response_obj.content)
-        print(f"🤖 Intent Router LLM Response: {response_str}")
+        print(f"🤖 Reminder  LLM Response: {response_str}")
 
         try:
             json_match = re.search(r'\{.*\}', response_str, re.DOTALL)
@@ -151,16 +151,16 @@ class ReminderAgent:
             intent = parsed_response.get("intent")
         except (json.JSONDecodeError, ValueError) as e:
             print(f"⚠️ Could not parse intent from LLM response: {e}")
-            return get_message("reminder_creation_failed", language)
+            return {"type": "text", "content": get_message("reminder_creation_failed", language)}
 
         if intent == "create_reminder":
             return await self._handle_create_reminder(user_data, parsed_response.get("data", {}))
         elif intent == "get_reminders":
             return await self._handle_get_reminders(user_data, parsed_response.get("filters", {}))
         else:
-            return get_message("reminder_not_found", language)
+            return {"type": "text", "content": get_message("reminder_not_found", language)}
 
-    async def _handle_create_reminder(self, user_data: Dict[str, Any], data: Dict[str, Any]) -> str:
+    async def _handle_create_reminder(self, user_data: Dict[str, Any], data: Dict[str, Any]) -> Dict[str, Any]:
         """Handles the logic for creating a new reminder."""
         user_id = user_data.get('user_id')
         language = user_data.get('language', 'en')
@@ -198,8 +198,7 @@ class ReminderAgent:
         if due_datetime_utc:
             local_due_date = pytz.utc.localize(due_datetime_utc).astimezone(user_tz)
             display_due_date = local_due_date.strftime('%Y-%m-%d %H:%M')
-
-        return get_message(
+        reminder_msg=get_message(
             "reminder_created",
             language,
             title=data['title'],
@@ -207,10 +206,12 @@ class ReminderAgent:
             priority=data.get('priority', 'medium').title(),
             type=data.get('reminder_type', 'general').title()
         )
+        return {"type": "text", "content": reminder_msg}
 
-    async def _handle_get_reminders(self, user_data: Dict[str, Any], filters: Dict[str, Any]) -> str:
+    async def _handle_get_reminders(self, user_data: Dict[str, Any], filters: Dict[str, Any]) -> Dict[str, Any]:
         """Handles the logic for fetching and formatting reminders based on filters."""
         user_id = user_data.get('user_id')
+        language = user_data.get('language', 'en')
         user_timezone = user_data.get('timezone', 'UTC')
         user_tz = pytz.timezone(user_timezone)
         now = datetime.now(user_tz)
@@ -221,6 +222,10 @@ class ReminderAgent:
         start_date, end_date = None, None
         if time_period == "today":
             start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            end_date = start_date + timedelta(days=1)
+        elif time_period == "tomorrow":
+            tomorrow = now + timedelta(days=1)
+            start_date = tomorrow.replace(hour=0, minute=0, second=0, microsecond=0)
             end_date = start_date + timedelta(days=1)
         elif time_period == "this week":
             start_date = now - timedelta(days=now.weekday())
@@ -236,6 +241,12 @@ class ReminderAgent:
         start_date_utc = start_date.astimezone(pytz.utc) if start_date else None
         end_date_utc = end_date.astimezone(pytz.utc) if end_date else None
 
+        # FIX 1: Make datetimes naive to match database storage format
+        if start_date_utc:
+            start_date_utc = start_date_utc.replace(tzinfo=None)
+        if end_date_utc:
+            end_date_utc = end_date_utc.replace(tzinfo=None)
+
         reminders = await self.supabase_client.database.get_user_reminders(
             user_id, 
             priority=priority,
@@ -244,21 +255,24 @@ class ReminderAgent:
         )
         
         if not reminders:
-            return get_message("no_pending_reminders", user_data.get('language', 'en'))
+            return {"type": "text", "content": get_message("no_pending_reminders", language)}
 
-        # Reuse the existing get_reminders method for formatting the output
-        return await self.format_reminders_for_display(user_data, reminders)
+        # FIX 2: Ensure the return value is a dictionary
+        formatted_string = await self.format_reminders_for_display(user_data, reminders)
+        return {"type": "text", "content": formatted_string}
 
 
-    async def get_reminders(self, user_data: Dict[str, Any], limit: int = 10) -> str:
+    async def get_reminders(self, user_data: Dict[str, Any], limit: int = 10) -> Dict[str, Any]:
         """Get user's latest pending reminders, formatted for display."""
+        language = user_data.get('language', 'en')
         reminders = await self.supabase_client.database.get_user_reminders(
             user_data.get('user_id'), include_completed=False, limit=limit
         )
         if not reminders:
-            return get_message("no_pending_reminders", user_data.get('language', 'en'))
+            return {"type": "text", "content": get_message("no_pending_reminders", language)}
         
-        return await self.format_reminders_for_display(user_data, reminders)
+        formatted_string = await self.format_reminders_for_display(user_data, reminders)
+        return {"type": "text", "content": formatted_string}
 
     async def format_reminders_for_display(self, user_data: Dict[str, Any], reminders: List[Reminder]) -> str:
         """Takes a list of reminders and formats them into a human-readable string."""
