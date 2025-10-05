@@ -103,7 +103,8 @@ class MainAgent:
                     general_prompt
                 )
                 general_response = str(general_response_obj.content)
-                return str(general_response)
+                dict_response = { 'type':'text','content': general_response }
+                return dict_response
                 
         except Exception as e:
             #print("failed to route message")

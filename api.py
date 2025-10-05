@@ -478,10 +478,11 @@ async def get_transaction_summary(request: SummaryRequest):
         
         # Step 1: Get user data using centralized helper
         user_data = await get_user_data(AuthCheckRequest(telegram_id=request.telegram_id))
-        
+        #start_date = datetime.now() - timedelta(days=request.days)
+        #end_date = datetime.now()
         # Step 2: Process the summary via the agent (no credits needed)
         result = await transaction_agent.get_summary(user_data, request.days)
-        
+
         print(f"Summary result: {result}")
         return {"success": True, "message": result}
     except HTTPException:
@@ -505,7 +506,7 @@ async def get_reminders(telegram_id: str, limit: int = 10):
         
         # Step 2: Process the reminders (no credits needed)
         result = await reminder_agent.get_reminders(user_data)
-        return {"success": True, "message": result}
+        return {"success": True, "message": result.get("content")}
     except HTTPException:
         raise
     except Exception as e:

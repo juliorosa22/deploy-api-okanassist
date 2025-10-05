@@ -32,7 +32,7 @@ class TransactionAgent:
                 Determine the user's intent. Possible intents are:
                 - `create_transaction`: The user wants to log a new expense or income. (e.g., "paid $50 for dinner", "got my $2000 salary")
                 - `get_summary`: The user wants a text summary of their finances. (e.g., "show my spending last week", "summary for this month")
-                - `generate_report`: The user wants a detailed PDF report. (e.g., "I need a report for the last 30 days", "generate pdf for january")
+                - `generate_report`: The user wants a detailed PDF report. (e.g., "I need a report for the last 30 days", "generate pdf for january"). Use this intent if the user's message includes words like "report", "pdf", "document", or asks for "detailed transactions". (e.g., "I need a report for the last 30 days", "generate pdf for january", "send me my detailed transactions")
 
                 **Step 2: Parameter Extraction**
                 - If intent is `create_transaction`, extract: `amount`, `description`, `transaction_type`, `category`, `merchant`.
@@ -152,12 +152,13 @@ class TransactionAgent:
             print(f"❌ Transaction Agent: Error processing message: {e}")
             return {"type": "text", "content": get_message("generic_error", lang)}
 
-    async def get_summary(self, user_data: Dict[str, Any], days: int) -> str:
+    async def get_summary(self, user_data: Dict[str, Any], days: int = 30) -> str:
         """
         Generates a financial summary for a given number of past days.
         This is a standalone method for a dedicated endpoint.
         """
         user_id = user_data.get('user_id')
+        print(f"Generating summary for user {user_id} for the last {days} days")
         lang = user_data.get('language', 'en')
         try:
             # --- FIX: Use timedelta for date calculation ---
@@ -497,59 +498,6 @@ class TransactionAgent:
             print(f"❌ Transaction (Bank Statement): Error processing bank statement: {e}")
             return "❌ Sorry, I couldn't process that bank statement. Please ensure it's a valid PDF with transaction data."
     
-    #TODO adapt to respond in user's language
-    async def get_summary(self, user_data: Dict[str, Any], days: int = 30) -> str:
-        """Generate financial summary using Groq for insights"""
-        user_id = user_data.get('user_id', None)
-        lang = user_data.get('language', 'en')
-        try:
-            # Get summary data from database
-            summary = await self.supabase_client.database.get_transaction_summary(user_id, days)
-            print(f"Summary data: {summary}")
-            # Use Groq for fast insights generation
-            insights_prompt = f"""
-            Analyze this financial summary and provide brief insights:
-            
-            - Total Income: ${summary.total_income:.2f}
-            - Total Expenses: ${summary.total_expenses:.2f}
-            - Income Transactions: {summary.income_count}
-            - Expense Transactions: {summary.expense_count}
-            - Top Categories: {summary.expense_categories}
-            
-            Provide 2-3 brief insights about spending patterns and financial health.
-            Keep it concise and encouraging.
-            """
-            
-            insights_obj = await asyncio.to_thread(self.text_agent.run, insights_prompt)
-            insights = insights_obj.content # <-- FIX: Access the .content attribute
-            
-            # Calculate net flow
-            net_flow = summary.total_income - summary.total_expenses
-            flow_emoji = "📈" if net_flow > 0 else "📉" if net_flow < 0 else "📊"
-            
-            # Build summary message
-            message = f"""
-            {flow_emoji} *Financial Summary (Last {days} days)*
-
-            💰 *Income:* ${summary.total_income:,.2f} ({summary.income_count} transactions)
-            💸 *Expenses:* ${summary.total_expenses:,.2f} ({summary.expense_count} transactions)
-            📊 *Net Flow:* ${net_flow:,.2f}
-
-            *Top Expense Categories:*
-            """
-            
-            for cat in summary.expense_categories[:3]:
-                message += f"• {cat['category']}: ${cat['total']:,.2f}\n"
-            
-            #message += f"\n*AI Insights:*\n{insights}\n\n🚀 *Analysis by:* Groq Llama 3.1 70B"
-            
-            return message
-            
-        except Exception as e:
-            print(f"❌ Error generating summary: {e}")
-            return "❌ Sorry, I couldn't generate your financial summary right now. Please try again later."
-    
-
     #Tools
 
     def _validate_category(self, category: str, transaction_type: str) -> str:

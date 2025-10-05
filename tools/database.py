@@ -4,6 +4,7 @@ from typing import List, Optional, Dict, Any, Tuple
 from datetime import datetime, timedelta
 from decimal import Decimal
 import json
+import pytz # Import the pytz library
 
 from .models import (
     Transaction, TransactionSummary, Reminder, ReminderSummary, 
@@ -564,13 +565,29 @@ class Database:
                                     end_date: Optional[datetime] = None) -> TransactionSummary:
         """Get transaction summary for a specified period."""
         async with self.pool.acquire() as conn:
-            # Default to last 30 days if no dates are provided
+            # Use UTC for consistent timezone calculations
+            utc = pytz.UTC
+
+            # Handle start_date: default to 30 days ago, make aware, set to start of day
             if not start_date:
-                start_date = datetime.now() - timedelta(days=30)
+                start_date = datetime.now(utc) - timedelta(days=30)
+            elif start_date.tzinfo is None:
+                start_date = utc.localize(start_date)
+            start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+
+            # Handle end_date: default to now, make aware, set to end of day
             if not end_date:
-                end_date = datetime.now()
+                end_date = datetime.now(utc)
+            elif end_date.tzinfo is None:
+                end_date = utc.localize(end_date)
+            end_date = end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
             
             period_days = (end_date - start_date).days
+
+            # --- FIX: Make datetimes naive right before the query ---
+            # This matches the timezone-naive TIMESTAMP column in the database
+            start_date_naive = start_date.replace(tzinfo=None)
+            end_date_naive = end_date.replace(tzinfo=None)
 
             # Get summary data
             summary_row = await conn.fetchrow("""
@@ -582,7 +599,7 @@ class Database:
                     COUNT(*) as total_transactions
                 FROM transactions 
                 WHERE user_id = $1 AND date >= $2 AND date <= $3
-            """, user_id, start_date, end_date)
+            """, user_id, start_date_naive, end_date_naive)
             
             # Get expense categories
             category_rows = await conn.fetch("""
@@ -592,14 +609,13 @@ class Database:
                 GROUP BY category
                 ORDER BY total DESC
                 LIMIT 5
-            """, user_id, start_date, end_date)
+            """, user_id, start_date_naive, end_date_naive)
             
             expense_categories = [
                 {"category": row['category'], "total": float(row['total'])}
                 for row in category_rows
             ]
-            
-            return TransactionSummary(
+            summary =TransactionSummary(
                 user_id=user_id,
                 period_days=period_days,
                 total_income=float(summary_row['total_income']),
@@ -609,6 +625,8 @@ class Database:
                 total_transactions=summary_row['total_transactions'],
                 expense_categories=expense_categories
             )
+            #print(f"Transaction Summary: {summary}") 
+            return summary
 
     # ============================================================================
     # REMINDER OPERATIONS

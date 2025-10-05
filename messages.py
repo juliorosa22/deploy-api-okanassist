@@ -63,6 +63,9 @@ MESSAGES = {
         "pending_reminders_header": "🗓️ *Here are your upcoming reminders:*",
         "reminder_fetch_failed": "❌ Sorry, I couldn't fetch your reminders right now.",
         "report_sent": "📩 *Transaction report sent!*\n\nCheck your Telegram messages for the PDF file.",
+        "pdf_report_caption": "📄 Here is your transaction report from {start_date} to {end_date}.",
+        "no_transactions_for_report": "I couldn't find any transactions in the selected date range to generate a report.",
+        "unclear_transaction_intent": "🤔 I'm not sure what to do with that. You can log an expense, ask for a summary, or request a report.",
 
          "help_message": """
 🤖 *OkanAssist Bot Help*
@@ -151,6 +154,9 @@ Just talk to me naturally - I understand! 🎉
         "pending_reminders_header": "🗓️ *Aquí están tus próximos recordatorios:*",
         "reminder_fetch_failed": "❌ Lo siento, no pude obtener tus recordatorios en este momento.",
         "report_sent": "📩 *¡Informe de transacciones enviado!*\n\nRevisa tus mensajes de Telegram para ver el archivo PDF.",
+        "pdf_report_caption": "📄 Aquí está tu reporte de transacciones desde {start_date} hasta {end_date}.",
+        "no_transactions_for_report": "No encontré ninguna transacción en el rango de fechas seleccionado para generar un reporte.",
+        "unclear_transaction_intent": "🤔 No estoy seguro de qué hacer con eso. Puedes registrar un gasto, pedir un resumen o solicitar un reporte.",
 
 
         "help_message": """
@@ -252,6 +258,9 @@ Organiza tu vida con recordatorios inteligentes.
         "pending_reminders_header": "🗓️ *Aqui estão seus próximos lembretes:*",
         "reminder_fetch_failed": "❌ Desculpe, não consegui buscar seus lembretes agora.",
         "report_sent": "📩 *Relatório de transações enviado!*\n\nVerifique suas mensagens no Telegram para o arquivo PDF.",
+        "pdf_report_caption": "📄 Aqui está o seu relatório de transações de {start_date} a {end_date}.",
+        "no_transactions_for_report": "Não encontrei nenhuma transação no período selecionado para gerar um relatório.",
+        "unclear_transaction_intent": "🤔 Não tenho certeza do que fazer com isso. Você pode registrar uma despesa, pedir um resumo ou solicitar um relatório.",
 
         "help_message": """
 🤖 *Ajuda do OkanAssist Bot*
@@ -288,7 +297,6 @@ Organize sua vida com lembretes inteligentes.
         "generic_error": "❌ Algo deu errado. Por favor, tente novamente ou entre em contato com o suporte.",
         "upgrade_to_premium": "🚀 *Faça o Upgrade para Premium!*\n\nClique no link abaixo para desbloquear recursos ilimitados de IA: \r[Fazer Upgrade Agora]({stripe_url})\n\n $$$",
         "already_premium": "✅ Você já é um usuário premium! Aproveite o acesso ilimitado a todos os recursos.",
-        "report_sent": "📩 *Relatório de transações enviado!*",
         
     }
 }
