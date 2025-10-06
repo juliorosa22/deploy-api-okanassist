@@ -530,20 +530,35 @@ class Database:
             transaction.id = result['id']
             transaction.created_at = result['created_at']
             return transaction
-
+##Improved for better date handling with timezones
     async def get_user_transactions(self, user_id: str, 
                                   start_date: Optional[datetime] = None, 
                                   end_date: Optional[datetime] = None,
                                   transaction_type: Optional[str] = None) -> List[Transaction]:
         """Get user transactions for a specified period with optional type filter."""
         async with self.pool.acquire() as conn:
-            # Default to last 30 days if no dates are provided
-            if not start_date:
-                start_date = datetime.now() - timedelta(days=30)
-            if not end_date:
-                end_date = datetime.now()
+            # Use UTC for consistent timezone calculations
+            utc = pytz.UTC
 
-            params = [user_id, start_date, end_date]
+            # Handle start_date: default to 30 days ago, make aware, set to start of day
+            if not start_date:
+                start_date = datetime.now(utc) - timedelta(days=30)
+            elif start_date.tzinfo is None:
+                start_date = utc.localize(start_date)
+            start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+
+            # Handle end_date: default to now, make aware, set to end of day
+            if not end_date:
+                end_date = datetime.now(utc)
+            elif end_date.tzinfo is None:
+                end_date = utc.localize(end_date)
+            end_date = end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+            # Make datetimes naive to match the timezone-naive TIMESTAMP column
+            start_date_naive = start_date.replace(tzinfo=None)
+            end_date_naive = end_date.replace(tzinfo=None)
+
+            params = [user_id, start_date_naive, end_date_naive]
             where_clauses = ["user_id = $1", "date >= $2", "date <= $3"]
             
             if transaction_type:
