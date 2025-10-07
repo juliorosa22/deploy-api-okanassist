@@ -83,19 +83,43 @@ class MainAgent:
 
                 
             elif self._contains_intent(intent_response, "HELP"):
-                # Return help content directly (no auth needed here)
-                return self._get_help_content(lang)
+                # Use the help message as context for a generated response
+                user_name = user_data.get('name', 'there')
+                help_context = self._get_help_content(lang)
+                
+                help_prompt = f"""
+                You are a friendly and helpful assistant named OkanAssist. The user, {user_name}, has asked for help.
+                Your task is to provide a helpful and engaging response based on the context below. Do not just repeat the text, but explain the main features in a conversational way.
+
+                - **Always respond in the user's language** ({lang_name}).
+                - Keep the response concise and friendly.
+                - Use emojis to make it more engaging.
+
+                **Help Context to use:**
+                ---
+                {help_context}
+                ---
+                """
+                
+                help_response_obj = await asyncio.to_thread(
+                    self.agent.run,
+                    help_prompt
+                )
+                help_response = str(help_response_obj.content)
+                return {'type': 'text', 'content': help_response}
 
             else:
                 # General conversation
                 # --- 3. APPLY THE FIX HERE AS WELL ---
-
+                user_name = user_data.get('name', 'there')
                 general_prompt = f"""
                 The intent is {intent_response}. Respond helpfully and engagingly to this message: '{message}'.
-                - Always respond in the user's language ({lang_name}). If the language is unclear, default to English.
+                - ** Respond mentioning the user name : {user_name}**
+                - **Always respond in the user's language** ({lang_name}). If the language is unclear, default to English.
+                - **Suggest how they can use OkanAssistant Bot**: Tracking transactions through simple messages, audios and receipts. Tracking daily activities and tasks with reminders.
+                - **OkanFit company goal** : Remember that OkanFit company mission: is to develop innovative solutions built on a robust AI stack, always focusing on meeting real user needs. Guided by the principle of Occam's Razor, we strive for simplicity and efficiency in every product we create. 
                 - When reasonable, add a fun, light-hearted tone with emojis or playful phrases to keep it enjoyable (e.g., for greetings or casual chats).
-                - Suggest how they can use OkanAssistant Bot features for tracking expenses and daily reminders.
-                - Also, encourage them to follow OkanFit on instagram: @okanfit.dev and visit https://www.okanfit.dev.br for more tips and updates.
+                - Also, encourage them to follow OkanFit on instagram: @okanfit.dev (https://www.instagram.com/okanfit.dev) and visit https://www.okanfit.dev.br for more tips and updates.
                 - Keep responses concise and avoid long replies.
                 """
                 general_response_obj = await asyncio.to_thread(

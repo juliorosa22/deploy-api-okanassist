@@ -2,7 +2,7 @@ from agno.agent import Agent
 import re
 import json
 from datetime import datetime, timedelta
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 import asyncio
 from agno.models.groq import Groq
 from tools import Reminder, ReminderType, Priority, SupabaseClient
@@ -25,10 +25,11 @@ class ReminderAgent:
             First, determine the user's intent. The possible intents are:
             - `create_reminder`: The user wants to create a new reminder. (e.g., "remind me to call mom tomorrow", "meeting in 30 mins", "pay bills next week", "doctor appointment on Sept 20 at 3pm", "daily workout at 7am", "weekly team sync every Monday at 10am")
             - `get_reminders`: The user wants to see a list of their existing reminders. (e.g., "show my tasks", "what are my urgent tasks tomorrow?","what are my reminders for this week?", "show urgent reminders", "show my schedule for week")
+            - `complete_reminders`: The user wants to mark reminders as done based on a time period. (e.g., "complete today's tasks", "clear yesterday's reminders", "I finished this week's tasks")
 
             **Step 2: Parameter Extraction**
             - If the intent is `create_reminder`, extract the reminder details: `title`, `description`, `due_datetime` (in UTC ISO 8601 format), `priority`, `reminder_type`, `is_recurring`, and `recurrence_pattern`.
-            - If the intent is `get_reminders`, extract filter parameters: `priority` ("urgent", "high", "medium", "low") and `time_period` ("today", "tomorrow", "this week", "this month").
+            - If the intent is `get_reminders` or `complete_reminders`, extract filter parameters: `priority` ("urgent", "high", "medium", "low") and `time_period` ("today", "tomorrow", "this week", "this month", "yesterday").
 
             **Step 3: JSON Output**
             You MUST return ONLY a valid JSON object based on the detected intent.
@@ -109,6 +110,16 @@ class ReminderAgent:
             }
             ```
 
+            *For `complete_reminders` intent:*
+            ```json
+            {
+                "intent": "complete_reminders",
+                "filters": {
+                    "time_period": "today"
+                }
+            }
+            ```
+
             *If no clear intent is found:*
             ```json
             {
@@ -157,6 +168,8 @@ class ReminderAgent:
             return await self._handle_create_reminder(user_data, parsed_response.get("data", {}))
         elif intent == "get_reminders":
             return await self._handle_get_reminders(user_data, parsed_response.get("filters", {}))
+        elif intent == "complete_reminders":
+            return await self._handle_complete_reminders(user_data, parsed_response.get("filters", {}))
         else:
             return {"type": "text", "content": get_message("reminder_not_found", language)}
 
@@ -208,6 +221,38 @@ class ReminderAgent:
         )
         return {"type": "text", "content": reminder_msg}
 
+    async def _handle_complete_reminders(self, user_data: Dict[str, Any], filters: Dict[str, Any]) -> Dict[str, Any]:
+        """Handles the logic for completing reminders based on filters."""
+        user_id = user_data.get('user_id')
+        language = user_data.get('language', 'en')
+        user_timezone = user_data.get('timezone', 'UTC')
+        user_tz = pytz.timezone(user_timezone)
+        now = datetime.now(user_tz)
+
+        time_period = filters.get("time_period")
+        if not time_period:
+            return {"type": "text", "content": get_message("unclear_intent", language)}
+
+        start_date, end_date = self._calculate_date_range(now, time_period)
+
+        if not start_date or not end_date:
+            return {"type": "text", "content": get_message("unclear_intent", language)}
+
+        # Convert to UTC and then make naive for the database query
+        start_date_utc_naive = start_date.astimezone(pytz.utc).replace(tzinfo=None)
+        end_date_utc_naive = end_date.astimezone(pytz.utc).replace(tzinfo=None)
+
+        completed_count = await self.supabase_client.database.mark_reminders_complete_by_date(
+            user_id, start_date_utc_naive, end_date_utc_naive
+        )
+
+        if completed_count > 0:
+            message = get_message("reminders_completed", language, count=completed_count, period=time_period)
+        else:
+            message = get_message("no_reminders_to_complete", language, period=time_period)
+        
+        return {"type": "text", "content": message}
+
     async def _handle_get_reminders(self, user_data: Dict[str, Any], filters: Dict[str, Any]) -> Dict[str, Any]:
         """Handles the logic for fetching and formatting reminders based on filters."""
         user_id = user_data.get('user_id')
@@ -219,23 +264,7 @@ class ReminderAgent:
         priority = filters.get("priority")
         time_period = filters.get("time_period")
         
-        start_date, end_date = None, None
-        if time_period == "today":
-            start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
-            end_date = start_date + timedelta(days=1)
-        elif time_period == "tomorrow":
-            tomorrow = now + timedelta(days=1)
-            start_date = tomorrow.replace(hour=0, minute=0, second=0, microsecond=0)
-            end_date = start_date + timedelta(days=1)
-        elif time_period == "this week":
-            start_date = now - timedelta(days=now.weekday())
-            start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
-            end_date = start_date + timedelta(weeks=1)
-        elif time_period == "this month":
-            start_date = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-            # Find the first day of the next month, then subtract one day
-            next_month = (start_date.replace(day=28) + timedelta(days=4)).replace(day=1)
-            end_date = next_month
+        start_date, end_date = self._calculate_date_range(now, time_period)
 
         # Convert to UTC for query
         start_date_utc = start_date.astimezone(pytz.utc) if start_date else None
@@ -261,6 +290,30 @@ class ReminderAgent:
         formatted_string = await self.format_reminders_for_display(user_data, reminders)
         return {"type": "text", "content": formatted_string}
 
+    def _calculate_date_range(self, now: datetime, time_period: str) -> Tuple[Optional[datetime], Optional[datetime]]:
+        """Calculates a start and end date based on a time period string."""
+        start_date, end_date = None, None
+        if time_period == "today":
+            start_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            end_date = start_date + timedelta(days=1)
+        elif time_period == "yesterday":
+            yesterday = now - timedelta(days=1)
+            start_date = yesterday.replace(hour=0, minute=0, second=0, microsecond=0)
+            end_date = start_date + timedelta(days=1)
+        elif time_period == "tomorrow":
+            tomorrow = now + timedelta(days=1)
+            start_date = tomorrow.replace(hour=0, minute=0, second=0, microsecond=0)
+            end_date = start_date + timedelta(days=1)
+        elif time_period == "this week":
+            start_date = now - timedelta(days=now.weekday())
+            start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+            end_date = start_date + timedelta(weeks=1)
+        elif time_period == "this month":
+            start_date = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            # Find the first day of the next month, then subtract one day
+            next_month = (start_date.replace(day=28) + timedelta(days=4)).replace(day=1)
+            end_date = next_month
+        return start_date, end_date
 
     async def get_reminders(self, user_data: Dict[str, Any], limit: int = 10) -> Dict[str, Any]:
         """Get user's latest pending reminders, formatted for display."""

@@ -57,6 +57,8 @@ MESSAGES = {
             "ιε *Priority:* {priority}\n"
             "🏷️ *Type:* {type}"
         ),
+        "reminders_completed": "✅ Great job! I've marked {count} reminders from {period} as complete.",
+        "no_reminders_to_complete": "👍 No pending reminders found for {period} to mark as complete.",
         "reminder_not_found": "🤔 I couldn't find a reminder in your message. Try something like 'remind me to call mom tomorrow'.",
         "reminder_creation_failed": "❌ Sorry, I couldn't create that reminder. Please try again.",
         "no_pending_reminders": "👍 You have no pending reminders. Great job!",
@@ -148,6 +150,8 @@ Just talk to me naturally - I understand! 🎉
             "ιε *Prioridad:* {priority}\n"
             "🏷️ *Tipo:* {type}"
         ),
+        "reminders_completed": "✅ ¡Excelente trabajo! He marcado {count} recordatorios de {period} como completados.",
+        "no_reminders_to_complete": "👍 No se encontraron recordatorios pendientes para {period} para marcar como completados.",
         "reminder_not_found": "🤔 No pude encontrar un recordatorio en tu mensaje. Intenta algo como 'recuérdame llamar a mamá mañana'.",
         "reminder_creation_failed": "❌ Lo siento, no pude crear ese recordatorio. Por favor, inténtalo de nuevo.",
         "no_pending_reminders": "👍 No tienes recordatorios pendientes. ¡Buen trabajo!",
@@ -252,6 +256,8 @@ Organiza tu vida con recordatorios inteligentes.
             "ιε *Prioridade:* {priority}\n"
             "🏷️ *Tipo:* {type}"
         ),
+        "reminders_completed": "✅ Ótimo trabalho! Marquei {count} lembretes de {period} como concluídos.",
+        "no_reminders_to_complete": "👍 Nenhum lembrete pendente encontrado para {period} para marcar como concluído.",
         "reminder_not_found": "🤔 Não consegui encontrar um lembrete na sua mensagem. Tente algo como 'lembre-me de ligar para a mamãe amanhã'.",
         "reminder_creation_failed": "❌ Desculpe, não consegui criar esse lembrete. Por favor, tente novamente.",
         "no_pending_reminders": "👍 Você não tem lembretes pendentes. Ótimo trabalho!",
