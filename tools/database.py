@@ -706,6 +706,19 @@ class Database:
             
             return [self._row_to_reminder(row) for row in rows]
     
+    async def mark_all_reminders_complete(self, user_id: str) -> int:
+        """Marks all non-completed reminders for a user as complete."""
+        async with self.pool.acquire() as conn:
+            result = await conn.execute("""
+                UPDATE reminders
+                SET is_completed = TRUE, completed_at = NOW(), updated_at = NOW()
+                WHERE user_id = $1 AND is_completed = FALSE
+            """, user_id)
+            try:
+                return int(result.split(' ')[1])
+            except (IndexError, ValueError):
+                return 0
+
     async def mark_reminders_complete_by_date(self, user_id: str, start_date: datetime, end_date: datetime) -> int:
         """Marks all non-completed reminders within a date range as complete."""
         async with self.pool.acquire() as conn:
