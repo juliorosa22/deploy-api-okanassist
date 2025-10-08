@@ -517,6 +517,7 @@ async def get_reminders(telegram_id: str, limit: int = 10):
 @app.post("/okanassist/v1/batch-notify-reminders")
 async def batch_notify_reminders(request: Request):
     """Receive batch of reminders and send notifications."""
+    await initialize_services()  # <-- ADD THIS LINE
     try:
         data = await request.json()
         reminders = data.get("reminders", [])

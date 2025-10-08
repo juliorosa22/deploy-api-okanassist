@@ -303,9 +303,18 @@ class ReminderAgent:
 
         reminders_data = []
         for reminder in reminders:
+            local_due_datetime_iso = None
+            if reminder.due_datetime:
+                # 1. Make the naive DB datetime UTC-aware
+                utc_due_datetime = pytz.utc.localize(reminder.due_datetime)
+                # 2. Convert it to the user's local timezone
+                local_due_datetime = utc_due_datetime.astimezone(user_tz)
+                # 3. Get the ISO string with timezone info for the LLM
+                local_due_datetime_iso = local_due_datetime.isoformat()
+
             reminders_data.append({
                 "title": reminder.title,
-                "due": reminder.due_datetime.isoformat() if reminder.due_datetime else None,
+                "due": local_due_datetime_iso, # Pass the timezone-aware string
                 "priority": reminder.priority.value,
                 "type": reminder.reminder_type.value
             })
