@@ -790,13 +790,13 @@ async def send_telegram_notification(telegram_id: str, title: str, description: 
         
         url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
         message = f"🔔 Reminder: {title}\n\n{description}\n\nDue: {formatted_due} ({timezone})"
-        
-        async with aiohttp.ClientSession() as session:
-            await session.post(url, json={
-                "chat_id": telegram_id,
-                "text": message,
-                "parse_mode": "Markdown"
-            })
+        send_telegram_message(telegram_id, message)
+    #     async with aiohttp.ClientSession() as session:
+    #         await session.post(url, json={
+    #             "chat_id": telegram_id,
+    #             "text": message,
+    #             "parse_mode": "Markdown"
+    #         })
     except Exception as e:
         print(f"❌ Error sending Telegram notification: {e}")
 
