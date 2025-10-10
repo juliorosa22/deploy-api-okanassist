@@ -64,10 +64,17 @@ MESSAGES = {
         "no_pending_reminders": "👍 You have no pending reminders. Great job!",
         "pending_reminders_header": "🗓️ *Here are your upcoming reminders:*",
         "reminder_fetch_failed": "❌ Sorry, I couldn't fetch your reminders right now.",
-        "report_sent": "📩 *Transaction report sent!*\n\nCheck your Telegram messages for the PDF file.",
+        "report_sent": "📩 *Transaction report sent!*\n\nCheck your Telegram messages for the PDF/csv file.",
         "pdf_report_caption": "📄 Here is your transaction report from {start_date} to {end_date}.",
         "no_transactions_for_report": "I couldn't find any transactions in the selected date range to generate a report.",
         "unclear_transaction_intent": "🤔 I'm not sure what to do with that. You can log an expense, ask for a summary, or request a report.",
+        "csv_report_caption": "📊 Here is your CSV transaction report from {start_date} to {end_date}.",
+        "financial_summary_header": "{flow_emoji} *Financial Summary ({period_days} days)*\n\n",
+        "financial_summary_income": "💰 *Income:* {currency_symbol}{total_income:,.2f}\n",
+        "financial_summary_expenses": "💸 *Expenses:* {currency_symbol}{total_expenses:,.2f}\n",
+        "financial_summary_net_flow": "📊 *Net Flow:* {formatted_net_flow}\n\n",
+        "financial_summary_categories_header": "*Top Expense Categories:*\n",
+        "financial_summary_category_item": "• {category}: {currency_symbol}{total:,.2f}\n",
 
          "help_message": """
 🤖 *OkanAssist Bot Help*
@@ -157,10 +164,17 @@ Just talk to me naturally - I understand! 🎉
         "no_pending_reminders": "👍 No tienes recordatorios pendientes. ¡Buen trabajo!",
         "pending_reminders_header": "🗓️ *Aquí están tus próximos recordatorios:*",
         "reminder_fetch_failed": "❌ Lo siento, no pude obtener tus recordatorios en este momento.",
-        "report_sent": "📩 *¡Informe de transacciones enviado!*\n\nRevisa tus mensajes de Telegram para ver el archivo PDF.",
+        "report_sent": "📩 *¡Informe de transacciones enviado!*\n\nRevisa tus mensajes de Telegram para ver el archivo PDF/csv.",
         "pdf_report_caption": "📄 Aquí está tu reporte de transacciones desde {start_date} hasta {end_date}.",
         "no_transactions_for_report": "No encontré ninguna transacción en el rango de fechas seleccionado para generar un reporte.",
         "unclear_transaction_intent": "🤔 No estoy seguro de qué hacer con eso. Puedes registrar un gasto, pedir un resumen o solicitar un reporte.",
+        "csv_report_caption": "📊 Aquí está tu reporte de transacciones en CSV desde {start_date} hasta {end_date}.",
+        "financial_summary_header": "{flow_emoji} *Resumen Financiero ({period_days} días)*\n\n",
+        "financial_summary_income": "💰 *Ingresos:* {currency_symbol}{total_income:,.2f}\n",
+        "financial_summary_expenses": "💸 *Gastos:* {currency_symbol}{total_expenses:,.2f}\n",
+        "financial_summary_net_flow": "📊 *Flujo Neto:* {formatted_net_flow}\n\n",
+        "financial_summary_categories_header": "*Principales Categorías de Gastos:*\n",
+        "financial_summary_category_item": "• {category}: {currency_symbol}{total:,.2f}\n",
 
 
         "help_message": """
@@ -263,10 +277,17 @@ Organiza tu vida con recordatorios inteligentes.
         "no_pending_reminders": "👍 Você não tem lembretes pendentes. Ótimo trabalho!",
         "pending_reminders_header": "🗓️ *Aqui estão seus próximos lembretes:*",
         "reminder_fetch_failed": "❌ Desculpe, não consegui buscar seus lembretes agora.",
-        "report_sent": "📩 *Relatório de transações enviado!*\n\nVerifique suas mensagens no Telegram para o arquivo PDF.",
+        "report_sent": "📩 *Relatório de transações enviado!*\n\nVerifique suas mensagens no Telegram ver o arquivo PDF/csv.",
         "pdf_report_caption": "📄 Aqui está o seu relatório de transações de {start_date} a {end_date}.",
         "no_transactions_for_report": "Não encontrei nenhuma transação no período selecionado para gerar um relatório.",
         "unclear_transaction_intent": "🤔 Não tenho certeza do que fazer com isso. Você pode registrar uma despesa, pedir um resumo ou solicitar um relatório.",
+        "csv_report_caption": "📊 Aqui está o seu relatório de transações em CSV de {start_date} a {end_date}.",
+        "financial_summary_header": "{flow_emoji} *Resumo Financeiro ({period_days} dias)*\n\n",
+        "financial_summary_income": "💰 *Renda:* {currency_symbol}{total_income:,.2f}\n",
+        "financial_summary_expenses": "💸 *Despesas:* {currency_symbol}{total_expenses:,.2f}\n",
+        "financial_summary_net_flow": "📊 *Fluxo Líquido:* {formatted_net_flow}\n\n",
+        "financial_summary_categories_header": "*Principais Categorias de Despesa:*\n",
+        "financial_summary_category_item": "• {category}: {currency_symbol}{total:,.2f}\n",
 
         "help_message": """
 🤖 *Ajuda do OkanAssist Bot*

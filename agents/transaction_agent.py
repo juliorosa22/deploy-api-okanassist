@@ -5,10 +5,19 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 import asyncio
 from agno.models.groq import Groq
-from tools import Transaction, TransactionType, SupabaseClient
-from tools.pdf_generator import create_transaction_report_pdf # Import the new PDF generator
+from tools import Transaction, TransactionType, SupabaseClient, TransactionSummary
+from tools.pdf_generator import create_transaction_report_pdf, create_transaction_report_csv # Import the new PDF generator
 from messages import get_message
 from agno.models.google import Gemini
+
+# A simple map for currency symbols
+CURRENCY_SYMBOLS = {
+    "USD": "$",
+    "EUR": "€",
+    "BRL": "R$",
+    "GBP": "£",
+    "JPY": "¥"
+}
 
 class TransactionAgent:
     """Specialized agent for handling financial transactions"""
@@ -32,7 +41,7 @@ class TransactionAgent:
                 Determine the user's intent. Possible intents are:
                 - `create_transaction`: The user wants to log a new expense or income. (e.g., "paid $50 for dinner", "got my $2000 salary")
                 - `get_summary`: The user wants a text summary of their finances. (e.g., "show my spending last week", "summary for this month")
-                - `generate_report`: The user wants a detailed PDF report. (e.g., "I need a report for the last 30 days", "generate pdf for january"). Use this intent if the user's message includes words like "report", "pdf", "document", or asks for "detailed transactions". (e.g., "I need a report for the last 30 days", "generate pdf for january", "send me my detailed transactions")
+                - `generate_report`: The user wants a detailed report of their transactions. Use this if the message includes "report", "pdf", "csv", "sheet", "spreadsheet", or "detailed transactions".
 
                 **Step 2: Parameter Extraction**
                 - If intent is `create_transaction`, extract: `amount`, `description`, `transaction_type`, `category`, `merchant`.
@@ -41,6 +50,10 @@ class TransactionAgent:
                   - Income Categories: {income_cats}
                   - If the category is unclear, default to "Shopping" for expenses and "Other Income" for income.
                 - If intent is `get_summary` or `generate_report`, extract date filters: `start_date` and `end_date` in 'YYYY-MM-DD' format.
+                - If intent is `generate_report`, also extract a `format`.
+                  - If the user mentions "pdf" or "document", the format is "pdf".
+                  - If the user mentions "csv", "sheet", or "spreadsheet", the format is "csv".
+                  - If the format is not specified, the default is "csv".
 
                 **Step 3: JSON Output**
                 You MUST return ONLY a valid JSON object.
@@ -50,11 +63,14 @@ class TransactionAgent:
                 *Create Transaction:*
                 `{{"intent": "create_transaction", "data": {{"amount": 50.00, "description": "Dinner", "transaction_type": "expense", "category": "Food & Dining"}}}}`
 
-                *Get Summary:*
+                *Get Summary (e.g., "last month summary"):*
                 `{{"intent": "get_summary", "filters": {{"start_date": "2025-09-01", "end_date": "2025-09-30"}}}}`
 
-                *Generate Report:*
-                `{{"intent": "generate_report", "filters": {{"start_date": "2025-01-01", "end_date": "2025-01-31"}}}}`
+                *Generate Report (e.g., "report for january as a pdf","export my transactions from january as a pdf"):*
+                `{{"intent": "generate_report", "filters": {{"start_date": "2025-01-01", "end_date": "2025-01-31", "format": "pdf"}}}}`
+                
+                *Generate Report (e.g., "export my transactions from this week","export this week  transactions as a csv"):*
+                `{{"intent": "generate_report", "filters": {{"start_date": "2025-10-06", "end_date": "2025-10-12", "format": "csv"}}}}`
             """
         )
         
@@ -152,37 +168,54 @@ class TransactionAgent:
             print(f"❌ Transaction Agent: Error processing message: {e}")
             return {"type": "text", "content": get_message("generic_error", lang)}
 
+    def _format_summary_message(self, summary: TransactionSummary, user_data: Dict[str, Any]) -> str:
+        """Helper function to format the financial summary message."""
+        lang = user_data.get('language', 'en')
+        currency_code = user_data.get('currency', 'USD')
+        currency_symbol = CURRENCY_SYMBOLS.get(currency_code, "$")
+
+        net_flow = summary.total_income - summary.total_expenses
+        flow_emoji = "📈" if net_flow >= 0 else "📉"
+
+        # Handle negative currency formatting
+        if net_flow < 0:
+            formatted_net_flow = f"-{currency_symbol}{abs(net_flow):,.2f}"
+        else:
+            formatted_net_flow = f"{currency_symbol}{net_flow:,.2f}"
+
+        message = get_message("financial_summary_header", lang, flow_emoji=flow_emoji, period_days=summary.period_days)
+        message += get_message("financial_summary_income", lang, currency_symbol=currency_symbol, total_income=summary.total_income)
+        message += get_message("financial_summary_expenses", lang, currency_symbol=currency_symbol, total_expenses=summary.total_expenses)
+        message += get_message("financial_summary_net_flow", lang, formatted_net_flow=formatted_net_flow)
+
+        if summary.expense_categories:
+            message += get_message("financial_summary_categories_header", lang)
+            for cat in summary.expense_categories:
+                message += get_message(
+                    "financial_summary_category_item",
+                    lang,
+                    category=cat['category'],
+                    currency_symbol=currency_symbol,
+                    total=cat['total']
+                )
+        return message
+
     async def get_summary(self, user_data: Dict[str, Any], days: int = 30) -> str:
         """
         Generates a financial summary for a given number of past days.
         This is a standalone method for a dedicated endpoint.
         """
         user_id = user_data.get('user_id')
-        print(f"Generating summary for user {user_id} for the last {days} days")
         lang = user_data.get('language', 'en')
         try:
-            # --- FIX: Use timedelta for date calculation ---
             end_date = datetime.now()
             start_date = end_date - timedelta(days=days)
-            print(start_date, end_date)
+            
             summary = await self.supabase_client.database.get_transaction_summary(
                 user_id, start_date, end_date
             )
             
-            net_flow = summary.total_income - summary.total_expenses
-            flow_emoji = "📈" if net_flow >= 0 else "📉"
-            
-            message = f"{flow_emoji} *Financial Summary (Last {days} days)*\n\n"
-            message += f"💰 *Income:* ${summary.total_income:,.2f}\n"
-            message += f"💸 *Expenses:* ${summary.total_expenses:,.2f}\n"
-            message += f"📊 *Net Flow:* ${net_flow:,.2f}\n\n"
-            
-            if summary.expense_categories:
-                message += "*Top Expense Categories:*\n"
-                for cat in summary.expense_categories:
-                    message += f"• {cat['category']}: ${cat['total']:,.2f}\n"
-            
-            return message
+            return self._format_summary_message(summary, user_data)
         except Exception as e:
             print(f"❌ Error generating summary: {e}")
             return get_message("generic_error", lang)
@@ -232,32 +265,25 @@ class TransactionAgent:
         """Handles fetching and formatting a transaction summary."""
         user_id = user_data.get('user_id')
         lang = user_data.get('language', 'en')
-        
+        user_currency = user_data.get('currency', 'USD')
         start_date = datetime.fromisoformat(filters['start_date']) if filters.get('start_date') else None
         end_date = datetime.fromisoformat(filters['end_date']) if filters.get('end_date') else None
 
         summary = await self.supabase_client.database.get_transaction_summary(user_id, start_date, end_date)
         
-        net_flow = summary.total_income - summary.total_expenses
-        flow_emoji = "📈" if net_flow >= 0 else "📉"
-        
-        message = f"{flow_emoji} *Financial Summary ({summary.period_days} days)*\n\n"
-        message += f"💰 *Income:* ${summary.total_income:,.2f}\n"
-        message += f"💸 *Expenses:* ${summary.total_expenses:,.2f}\n"
-        message += f"📊 *Net Flow:* ${net_flow:,.2f}\n\n"
-        
-        if summary.expense_categories:
-            message += "*Top Expense Categories:*\n"
-            for cat in summary.expense_categories:
-                message += f"• {cat['category']}: ${cat['total']:,.2f}\n"
+        message = self._format_summary_message(summary, user_data)
         
         return {"type": "text", "content": message}
 
     async def _handle_generate_report(self, user_data: Dict[str, Any], filters: Dict[str, Any]) -> Dict[str, Any]:
-        """Handles generating a PDF transaction report."""
+        """Handles generating a transaction report in PDF or CSV format."""
         user_id = user_data.get('user_id')
         lang = user_data.get('language', 'en')
+        user_currency = user_data.get('currency', 'USD')
         
+        # Determine the format, defaulting to 'csv'
+        report_format = filters.get('format', 'csv').lower()
+
         start_date = datetime.fromisoformat(filters['start_date']) if filters.get('start_date') else datetime.now() - timedelta(days=30)
         end_date = datetime.fromisoformat(filters['end_date']) if filters.get('end_date') else datetime.now()
 
@@ -265,14 +291,26 @@ class TransactionAgent:
         
         if not transactions:
             return {"type": "text", "content": get_message("no_transactions_for_report", lang)}
-            
-        pdf_path = create_transaction_report_pdf(transactions, user_data.get('name', 'User'), start_date, end_date)
         
+        file_path = ""
+        caption_key = ""
+
+        if report_format == 'pdf':
+            file_path = create_transaction_report_pdf(transactions, user_data.get('name', 'User'), start_date, end_date, user_currency)
+            caption_key = "pdf_report_caption"
+        elif report_format == 'csv':
+            # We will create this function in the next step
+            file_path = create_transaction_report_csv(transactions, user_data.get('name', 'User'), start_date, end_date, user_currency)
+            caption_key = "csv_report_caption" # We will add this message
+        else:
+            # Fallback for an unknown format
+            return {"type": "text", "content": f"Sorry, the report format '{report_format}' is not supported."}
+
         # Return a special response type for the API to handle file sending
         return {
             "type": "file",
-            "content": pdf_path,
-            "caption": get_message("pdf_report_caption", lang, start_date=start_date.strftime('%Y-%m-%d'), end_date=end_date.strftime('%Y-%m-%d'))
+            "content": file_path,
+            "caption": get_message(caption_key, lang, start_date=start_date.strftime('%Y-%m-%d'), end_date=end_date.strftime('%Y-%m-%d'))
         }
 
     async def process_receipt_image(self, user_data: Dict[str, Any], image_path: str, lang: str = 'en') -> str:
