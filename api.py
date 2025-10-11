@@ -328,11 +328,13 @@ async def process_audio(telegram_id: str = Form(...), file: UploadFile = File(..
             file_path = result.get("content")
             caption = result.get("caption", "Here is your report.")
             await send_telegram_document(telegram_id, file_path, caption)
+            
             # Clean up the temporary file
             try:
                 os.remove(file_path)
             except Exception as e:
                 print(f"⚠️ Failed to remove temporary file {file_path}: {e}")
+            return {"success": True, "message": get_message("report_sent", lang)}
         else:
             # Fallback for raw string responses or other types
             final_message = str(result)
