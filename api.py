@@ -308,7 +308,7 @@ async def process_audio(telegram_id: str = Form(...), file: UploadFile = File(..
         supabase_id = user_data.get('user_id', None)
         lang = user_data.get('language', 'en')
         user_timezone = user_data.get('timezone', 'UTC')
-
+        telegram_id = user_data.get('telegram_id', telegram_id)
         # Save uploaded audio file temporarily
         with tempfile.NamedTemporaryFile(delete=False, suffix=".ogg") as temp_file:
             content = await file.read()
@@ -322,6 +322,17 @@ async def process_audio(telegram_id: str = Form(...), file: UploadFile = File(..
         # Check if the result is a dictionary with a 'type' key, and extract content
         if isinstance(result, dict) and result.get("type") == "text":
             final_message = result.get("content")
+
+        # Handle file responses (for PDF/csv reports)
+        elif result.get("type") == "file":
+            file_path = result.get("content")
+            caption = result.get("caption", "Here is your report.")
+            await send_telegram_document(telegram_id, file_path, caption)
+            # Clean up the temporary file
+            try:
+                os.remove(file_path)
+            except Exception as e:
+                print(f"⚠️ Failed to remove temporary file {file_path}: {e}")
         else:
             # Fallback for raw string responses or other types
             final_message = str(result)
