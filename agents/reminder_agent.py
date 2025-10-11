@@ -19,7 +19,12 @@ class ReminderAgent:
             name="ReminderProcessor",
             model=Groq(id="llama-3.3-70b-versatile", temperature=0.2),
             instructions="""
-            You are a multilingual AI assistant specializing in task and reminder management. Your primary goal is to understand a user's intent from their message and respond accordingly. You will be given the user's current date and time to accurately interpret their requests.
+            You are a multilingual AI assistant specializing in task and reminder management. Your primary goal is to understand a user's intent from their message and respond accordingly. You will be given the user's current date and time, including their timezone, to accurately interpret their requests.
+
+            **Timezone Handling Rules:**
+            1. The user's message (e.g., "at 3pm") is ALWAYS in their local timezone.
+            2. The `due_datetime` you output in the JSON MUST be converted to the UTC timezone.
+            3. The output format for `due_datetime` MUST be a full ISO 8601 string with a 'Z' suffix (e.g., "YYYY-MM-DDTHH:MM:SSZ").
 
             **Step 1: Intent Detection**
             First, determine the user's intent. The possible intents are:
@@ -35,31 +40,35 @@ class ReminderAgent:
             **Step 3: JSON Output**
             You MUST return ONLY a valid JSON object based on the detected intent.
 
-            **JSON Output Examples (Current Date: 2025-10-07):**
+            **JSON Output Examples (Assuming user's current time is `2025-10-07T10:00:00-04:00` which is UTC-4):**
 
-            *For `create_reminder` intent:*
+            *For `create_reminder` intent (e.g., "Meeting tomorrow at 12pm"):*
+            - User's local time: 2025-10-08 at 12:00.
+            - Converted to UTC: 2025-10-08 at 16:00.
             ```json
             {
                 "intent": "create_reminder",
                 "data": {
-                    "title": "Call Mom",
-                    "description": "Remember to call Mom to check in tomorrow.",
-                    "due_datetime": "2025-10-08T15:00:00Z",
-                    "priority": "high",
-                    "reminder_type": "habit",
+                    "title": "Meeting",
+                    "description": "Meeting tomorrow at 12pm",
+                    "due_datetime": "2025-10-08T16:00:00Z",
+                    "priority": "medium",
+                    "reminder_type": "event",
                     "is_recurring": false,
                     "recurrence_pattern": null
                 }
             }
             ```
             *For `create_reminder` intent: (e.g., "Appointment with Dr. Smith Nov 20 at 3pm"):*
+            - User's local time: 2025-11-20 at 15:00.
+            - Converted to UTC: 2025-11-20 at 19:00.
             ```json
             {
                 "intent": "create_reminder",
                 "data": {
-                    "title": "Doctor Appointment",
-                    "description": "Don't forget your appointment with Dr. Smith on November 20 at 3pm.",
-                    "due_datetime": "2025-11-20T15:00:00Z",
+                    "title": "Appointment with Dr. Smith",
+                    "description": "Appointment with Dr. Smith Nov 20 at 3pm",
+                    "due_datetime": "2025-11-20T19:00:00Z",
                     "priority": "high",
                     "reminder_type": "event",
                     "is_recurring": false,
@@ -68,13 +77,15 @@ class ReminderAgent:
             }
             ```
             *For `create_reminder` intent: (e.g., "daily workout at 6pm"):*
+            - User's local time: 2025-10-07 at 18:00.
+            - Converted to UTC: 2025-10-07 at 22:00.
             ```json
             {
                 "intent": "create_reminder",
                 "data": {
                     "title": "Daily Workout",
                     "description": "Your daily workout session.",
-                    "due_datetime": "2025-10-07T18:00:00Z",
+                    "due_datetime": "2025-10-07T22:00:00Z",
                     "priority": "medium",
                     "reminder_type": "habit",
                     "is_recurring": true,
@@ -142,7 +153,9 @@ class ReminderAgent:
 
         extraction_prompt = f"""
         The user's current date and time is {user_now.isoformat()}.
-        Analyze the following user message and return the JSON output based on your instructions.
+        The user's message is in their local timezone.
+        Analyze the following user message and return a JSON object based on your instructions.
+        Remember to convert the `due_datetime` to UTC timezone in 'YYYY-MM-DDTHH:MM:SSZ' format.
 
         **User Message:** "{message}"
         """
